@@ -1,0 +1,1040 @@
+%% 4-Way Intersection Simulation
+close all; clear; clc;
+clear global RSUObjs
+
+% addpath
+addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/class'))
+addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/function'))
+addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/simplot'))
+
+global CarN CarS CarE CarW TrafficLight
+global dt KK
+
+InitVals;
+fm = 1;
+dt = 0.5;
+KKmax = 3000;
+
+% --- Traffic light parameters (time-based) ---
+Cycle = 120;           % seconds
+gNS = 54.5;  yNS = 3.5;  ar1 = 2.0;   % NS green, NS yellow, all-red after NS
+gEW = 54.5;  yEW = 3.5;  ar2 = 2.0;   % EW green, EW yellow, all-red after EW
+
+% --- Traffic light / cycle log ---
+LightLog = struct('Time', {}, 'CycleIdx', {}, 'tInCycle', {}, ...
+    'Phase', {}, 'NS', {}, 'EW', {});
+
+% --- wait parameters ---
+stop_line = 10;  % meters before the center intersection
+
+% --- Gap acceptance parameters for right turns ---
+minGapTime = 2.0;   % [s] minimum time gap vs your estimated turn time
+minGapDist = 6.0;   % [m] minimum distance gap to the conflict point
+
+% --- turn parameters ---
+turn_start = 10;     % x position to begin slowing
+turn_wait = 5; % x position to wait
+turn_release = 1.5; % x position to trigger turning
+out_eps = 0.5;   % meter past the stop line to drop a turning vehicle
+wait_eps = 0.3;   % meter window to detect “at the wait point”
+appear = 3;
+
+% --- Log ---
+CarLog = struct('Time', {}, 'ID', {}, 'Dir', {}, 'TurnLeft', {},'TurnRight', {}, 'X', {}, 'Y', {}, 'V', {}, 'Ac', {});
+CarLogN = CarLog;  CarLogS = CarLog;  CarLogE = CarLog;  CarLogW = CarLog;
+
+% --- Cars parameters ---
+CarN = Car.empty();
+CarS = Car.empty();
+CarE = Car.empty();
+CarW = Car.empty();
+
+CarIDN = 1000;
+CarIDS = 2000;
+CarIDE = 3000;
+CarIDW = 4000;
+
+hFig = figure;
+set(hFig, 'Position', [100, 100, 1000, 800]);
+
+% --- Traffic flow parameters ---
+spawn_gap_min = 8;            % meters between entry and nearest car
+
+% Piecewise ramp: 0–120s light, 120–300s medium, 300s+ heavy
+DemandStages = [0,120,300];   % seconds
+
+% Axis flow rates (veh/s) — split equally to the two approaches on that axis
+lambdaNS_axis = [0.30, 0.45, 0.60];  % NS total
+lambdaEW_axis = [0.25, 0.40, 0.55];  % EW total
+
+%% === Initialize new cars===
+% for I=1:30
+%     % SOUTH → NORTH (drive left, so +X)
+%     IDN = CarIDN + I;
+%     carN = Car(IDN, -1.5, -150);
+%     carN.Dir = 'N';
+%     CarN(end+1) = carN;
+%
+%     % NORTH → SOUTH (drive left, so -X)
+%     IDS = CarIDS + I;
+%     carS = Car(IDS, 1.5, 150);
+%     carS.Dir = 'S';
+%     CarS(end+1) = carS;
+%
+%     % WEST → EAST (drive left, so +Y)
+%     IDE = CarIDE + I;
+%     carE = Car(IDE, -150, -1.5);
+%     carE.Dir = 'E';
+%     CarE(end+1) = carE;
+%
+%     % EAST → WEST (drive left, so -Y)
+%     IDW = CarIDW + I;
+%     carW = Car(IDW, 150, 1.5);
+%     carW.Dir = 'W';
+%     CarW(end+1) = carW;
+% end
+%
+% CarIDN = IDN;
+% CarIDS = IDS;
+% CarIDE = IDE;
+% CarIDW = IDW;
+
+% SOUTH → NORTH (drive left, so +X)
+carN = Car(CarIDN, -1.5, -150);
+CarIDN = CarIDN + 1;
+carN.Dir = 'N';
+CarN(end+1) = carN;
+
+% NORTH → SOUTH (drive left, so -X)
+carS = Car(CarIDS, 1.5, 150);
+CarIDS = CarIDS + 1;
+carS.Dir = 'S';
+CarS(end+1) = carS;
+
+% WEST → EAST (drive left, so +Y)
+carE = Car(CarIDE, -150, 1.5);
+CarIDE = CarIDE + 1;
+carE.Dir = 'E';
+CarE(end+1) = carE;
+
+% EAST → WEST (drive left, so -Y)
+carW = Car(CarIDW, 150, -1.5);
+CarIDW = CarIDW + 1;
+carW.Dir = 'W';
+CarW(end+1) = carW;
+
+for KK = 1:KKmax
+    %% === Traffic Light Phases ===
+    t = mod(KK*dt, Cycle);
+
+    if t < gNS
+        TrafficLight.NS = 'green';  TrafficLight.EW = 'red';
+    elseif t < gNS + yNS
+        TrafficLight.NS = 'yellow'; TrafficLight.EW = 'red';
+    elseif t < gNS + yNS + ar1
+        TrafficLight.NS = 'red';    TrafficLight.EW = 'red';   % all-red clearance
+    elseif t < gNS + yNS + ar1 + gEW
+        TrafficLight.NS = 'red';    TrafficLight.EW = 'green';
+    elseif t < gNS + yNS + ar1 + gEW + yEW
+        TrafficLight.NS = 'red';    TrafficLight.EW = 'yellow';
+    else
+        TrafficLight.NS = 'red';    TrafficLight.EW = 'red';   % all-red clearance
+    end
+
+    % --- Log traffic cycle state ---
+    cycIdx = floor((KK*dt) / Cycle) + 1;       % 1-based cycle index
+    phs = phaseName(t, gNS, yNS, ar1, gEW, yEW);
+    LightLog(end+1) = struct( ...
+        'Time',      KK*dt, ...
+        'CycleIdx',  cycIdx, ...
+        'tInCycle',  t, ...
+        'Phase',     phs, ...
+        'NS',        TrafficLight.NS, ...
+        'EW',        TrafficLight.EW );
+
+    %% === Plot ===
+    if(mod(KK,2)==1)
+        SimPlotIntersection;
+    end
+
+    %% === Spawn new cars (Poisson, ramps from light->heavy) ===
+    tsec = KK * dt;
+
+    % Get per-approach rates (veh/s)
+    [lamN, lamS, lamE, lamW] = getApproachRates(tsec, DemandStages, lambdaNS_axis, lambdaEW_axis);
+    spawnProb = @(lam) 1 - exp(-lam * dt);   % Poisson step prob
+
+    % NORTH (spawn at Y=-150, moving +Y)
+    if rand < spawnProb(lamN) && canSpawnY(CarN, -150, spawn_gap_min)
+        carN = Car(CarIDN, -1.5, -150); CarIDN = CarIDN + 1;
+        carN.Dir = 'N';
+        CarN(end+1) = carN;
+    end
+
+    % SOUTH (spawn at Y=+150, moving -Y)
+    if rand < spawnProb(lamS) && canSpawnY(CarS, 150, spawn_gap_min)
+        carS = Car(CarIDS, 1.5, 150); CarIDS = CarIDS + 1;
+        carS.Dir = 'S';
+        CarS(end+1) = carS;
+    end
+
+    % EAST (spawn at X=-150, moving +X)
+    if rand < spawnProb(lamE) && canSpawnX(CarE, -150, spawn_gap_min)
+        carE = Car(CarIDE, -150, 1.5); CarIDE = CarIDE + 1;
+        carE.Dir = 'E';
+        CarE(end+1) = carE;
+    end
+
+    % WEST (spawn at X=+150, moving -X)
+    if rand < spawnProb(lamW) && canSpawnX(CarW, 150, spawn_gap_min)
+        carW = Car(CarIDW, 150, -1.5); CarIDW = CarIDW + 1;
+        carW.Dir = 'W';
+        CarW(end+1) = carW;
+    end
+
+
+    %% === Compute Acceleration and movement ===
+    % % N
+    % for i = 1:length(CarN)
+    %     % CarN(i).Lpos = i;
+    %     if i > 1
+    %         CarN(i).Ac = CarN(i).IDM(CarN(i), CarN(i-1));
+    %     else
+    %         CarN(i).Ac = 0.5 * (CarN(i).Vd - CarN(i).V);
+    %     end
+    % end
+    %
+    % % S
+    % for i = 1:length(CarS)
+    %     % CarS(i).Lpos = i;
+    %     if i > 1
+    %         CarS(i).Ac = CarS(i).IDM(CarS(i), CarS(i-1));
+    %     else
+    %         CarS(i).Ac = 0.5 * (CarS(i).Vd - CarS(i).V);
+    %     end
+    % end
+    %
+    % % E
+    % for i = 1:length(CarE)
+    %     % CarE(i).Lpos = i;
+    %     if i > 1
+    %         CarE(i).Ac = CarE(i).IDM(CarE(i), CarE(i-1));
+    %     else
+    %         CarE(i).Ac = 0.5 * (CarE(i).Vd - CarE(i).V);
+    %     end
+    % end
+    %
+    % % W
+    % for i = 1:length(CarW)
+    %     % CarW(i).Lpos = i;
+    %     if i > 1
+    %         CarW(i).Ac = CarW(i).IDM(CarW(i), CarW(i-1));
+    %     else
+    %         CarW(i).Ac = 0.5 * (CarW(i).Vd - CarW(i).V);
+    %     end
+    % end
+
+    %% === Compute Acceleration and movement with Traffic Light Algorithm ===
+
+    % NORTH → SOUTH
+    used_dummyN = false;
+    for i = 1:length(CarN)
+        if strcmp(TrafficLight.NS, 'red') || strcmp(TrafficLight.NS, 'yellow')
+            if ~used_dummyN && (CarN(i).Y < -stop_line + CarN(i).R0)
+                dummy = Car(-1, 0, 0);
+                dummy.Y = -stop_line + CarN(i).R0;
+                dummy.V = 0;
+                dummy.Dir = 'N';
+                CarN(i).Ac = CarN(i).IDM(CarN(i), dummy);
+                used_dummyN = true;
+            elseif i > 1
+                CarN(i).Ac = CarN(i).IDM(CarN(i), CarN(i-1));
+            else
+                CarN(i).Ac = 0.5 * (CarN(i).Vd - CarN(i).V);
+            end
+        else
+            if i > 1
+                CarN(i).Ac = CarN(i).IDM(CarN(i), CarN(i-1));
+            else
+                CarN(i).Ac = 0.5 * (CarN(i).Vd - CarN(i).V);
+            end
+        end
+    end
+
+
+    % SOUTH → NORTH
+    used_dummyS = false;
+    for i = 1:length(CarS)
+        if strcmp(TrafficLight.NS, 'red') || strcmp(TrafficLight.NS, 'yellow')
+            if ~used_dummyS && (CarS(i).Y >  stop_line - CarS(i).R0)
+                dummy = Car(-1, 0, 0);
+                dummy.Y = stop_line - CarS(i).R0;
+                dummy.V = 0;
+                dummy.Dir = 'S';
+                CarS(i).Ac = CarS(i).IDM(CarS(i), dummy);
+                used_dummyS = true;
+            elseif i > 1
+                CarS(i).Ac = CarS(i).IDM(CarS(i), CarS(i-1));
+            else
+                CarS(i).Ac = 0.5 * (CarS(i).Vd - CarS(i).V);
+            end
+        else
+            if i > 1
+                CarS(i).Ac = CarS(i).IDM(CarS(i), CarS(i-1));
+            else
+                CarS(i).Ac = 0.5 * (CarS(i).Vd - CarS(i).V);
+            end
+        end
+    end
+
+
+    % WEST → EAST
+    used_dummyE = false;
+    for i = 1:length(CarE)
+        if strcmp(TrafficLight.EW, 'red') || strcmp(TrafficLight.EW, 'yellow')
+            if ~used_dummyE && (CarE(i).X < -stop_line + CarE(i).R0)
+                dummy = Car(-1, 0, 0);
+                dummy.X = -stop_line + CarE(i).R0;
+                dummy.V = 0;
+                dummy.Dir = 'E';
+                CarE(i).Ac = CarE(i).IDM(CarE(i), dummy);
+                used_dummyE = true;
+            elseif i > 1
+                CarE(i).Ac = CarE(i).IDM(CarE(i), CarE(i-1));
+            else
+                CarE(i).Ac = 0.5 * (CarE(i).Vd - CarE(i).V);
+            end
+        else
+            if i > 1
+                CarE(i).Ac = CarE(i).IDM(CarE(i), CarE(i-1));
+            else
+                CarE(i).Ac = 0.5 * (CarE(i).Vd - CarE(i).V);
+            end
+        end
+    end
+
+
+    % EAST → WEST
+    used_dummyW = false;
+    for i = 1:length(CarW)
+        if strcmp(TrafficLight.EW, 'red') || strcmp(TrafficLight.EW, 'yellow')
+            if ~used_dummyW && (CarW(i).X >  stop_line - CarW(i).R0)
+                dummy = Car(-1, 0, 0);
+                dummy.X = stop_line - CarW(i).R0;
+                dummy.V = 0;
+                dummy.Dir = 'W';
+                CarW(i).Ac = CarW(i).IDM(CarW(i), dummy);
+                used_dummyW = true;
+            elseif i > 1
+                CarW(i).Ac = CarW(i).IDM(CarW(i), CarW(i-1));
+            else
+                CarW(i).Ac = 0.5 * (CarW(i).Vd - CarW(i).V);
+            end
+        else
+            if i > 1
+                CarW(i).Ac = CarW(i).IDM(CarW(i), CarW(i-1));
+            else
+                CarW(i).Ac = 0.5 * (CarW(i).Vd - CarW(i).V);
+            end
+        end
+    end
+
+    %% Turn Left
+    % W -> S
+    used_dummyW_left = false;
+    for i = length(CarW):-1:1
+        car = CarW(i);
+        if car.TurnLeft == 1 && car.TurnedLeft == 0
+            % Slow down approaching the turn zone
+            if car.X > turn_release && car.X <= turn_start
+                % Check if car ahead (i-1) is also a left-turner not yet turned
+                if i > 1 && CarW(i-1).TurnLeft == 1 && CarW(i-1).TurnedLeft == 0
+                    % Follow the car ahead
+                    car.Ac = car.IDM(car, CarW(i-1));
+                elseif car.V > 2.0 % Only use dummy if car is moving fast
+                    % No left-turner ahead, use dummy
+                    if ~used_dummyW_left
+                        dummy = Car(-1, 0, 0);
+                        dummy.X = turn_release - car.R0;
+                        dummy.Y = car.Y;
+                        dummy.V = 0;
+                        car.Ac = car.IDM(car, dummy);
+                        used_dummyW_left = true;
+                    end
+                end
+            end
+
+            % Execute turn when reaching release point (check this FIRST)
+            if car.X <= turn_release
+                car.Dir = 'S';
+                car.X = 1.5;
+                car.Y = -appear;
+                car.V = 3;
+                car.Ac = 0.5 * (car.Vd - car.V);
+                car.TurnedLeft = 1;
+
+                insertIndex = find([CarS.Y] > car.Y, 1);
+                if isempty(insertIndex)
+                    CarS(end+1) = car;
+                else
+                    CarS(insertIndex+1:end+1) = CarS(insertIndex:end);
+                    CarS(insertIndex) = car;
+                end
+                CarW(i) = [];
+                continue;
+            end
+            CarW(i) = car;
+        end
+    end
+
+    % E -> N
+    used_dummyE_left = false;
+    for i = length(CarE):-1:1
+        car = CarE(i);
+        if car.TurnLeft == 1 && car.TurnedLeft == 0
+            % Slow down approaching the turn zone
+            if car.X < -turn_release && car.X >= -turn_start
+                % Check if car ahead (i-1) is also a left-turner not yet turned
+                if i > 1 && CarE(i-1).TurnLeft == 1 && CarE(i-1).TurnedLeft == 0
+                    % Follow the car ahead
+                    car.Ac = car.IDM(car, CarE(i-1));
+                elseif car.V > 2.0 % Only use dummy if car is moving fast
+                    % No left-turner ahead, use dummy
+                    if ~used_dummyE_left
+                        dummy = Car(-1, 0, 0);
+                        dummy.X = -turn_release + car.R0;
+                        dummy.Y = car.Y;
+                        dummy.V = 0;
+                        car.Ac = car.IDM(car, dummy);
+                        used_dummyE_left = true;
+                    end
+                end
+            end
+
+            % Execute turn when reaching release point (check this FIRST)
+            if car.X >= -turn_release
+                car.Dir = 'N';
+                car.X = -1.5;
+                car.Y = appear;
+                car.V = 3;
+                car.Ac = 0.5 * (car.Vd - car.V);
+                car.TurnedLeft = 1;
+                insertIndex = find([CarN.Y] < car.Y, 1);
+                if isempty(insertIndex)
+                    CarN(end+1) = car;
+                else
+                    CarN(insertIndex+1:end+1) = CarN(insertIndex:end);
+                    CarN(insertIndex) = car;
+                end
+                CarE(i) = [];
+                continue;
+            end
+            CarE(i) = car;
+        end
+    end
+
+    % S -> E
+    used_dummyS_left = false;
+    for i = length(CarS):-1:1
+        car = CarS(i);
+        if car.TurnLeft == 1 && car.TurnedLeft == 0
+            % Slow down approaching the turn zone
+            if car.Y > turn_release && car.Y <= turn_start
+                % Check if car ahead (i-1) is also a left-turner not yet turned
+                if i > 1 && CarS(i-1).TurnLeft == 1 && CarS(i-1).TurnedLeft == 0
+                    % Follow the car ahead
+                    car.Ac = car.IDM(car, CarS(i-1));
+                elseif car.V > 2.0 % Only use dummy if car is moving fast
+                    % No left-turner ahead, use dummy
+                    if ~used_dummyS_left
+                        dummy = Car(-1, 0, 0);
+                        dummy.X = car.X;
+                        dummy.Y = turn_release - car.R0;
+                        dummy.V = 0;
+                        car.Ac = car.IDM(car, dummy);
+                        used_dummyS_left = true;
+                    end
+                end
+            end
+
+            % Execute turn when reaching release point (check this FIRST)
+            if car.Y <= turn_release
+                car.Dir = 'E';
+                car.X = appear;
+                car.Y = 1.5;
+                car.V = 3;
+                car.Ac = 0.5 * (car.Vd - car.V);
+                car.TurnedLeft = 1;
+                insertIndex = find([CarE.X] < car.X, 1);
+                if isempty(insertIndex)
+                    CarE(end+1) = car;
+                else
+                    CarE(insertIndex+1:end+1) = CarE(insertIndex:end);
+                    CarE(insertIndex) = car;
+                end
+                CarS(i) = [];
+                continue;
+            end
+            CarS(i) = car;
+        end
+    end
+
+    % N -> W
+    used_dummyN_left = false;
+    for i = length(CarN):-1:1
+        car = CarN(i);
+        if car.TurnLeft == 1 && car.TurnedLeft == 0
+            % Slow down approaching the turn zone
+            if car.Y < -turn_release && car.Y >= -turn_start
+                % Check if car ahead (i-1) is also a left-turner not yet turned
+                if i > 1 && CarN(i-1).TurnLeft == 1 && CarN(i-1).TurnedLeft == 0
+                    % Follow the car ahead
+                    car.Ac = car.IDM(car, CarN(i-1));
+                elseif car.V > 2.0 % Only use dummy if car is moving fast
+                    % No left-turner ahead, use dummy
+                    if ~used_dummyN_left
+                        dummy = Car(-1, 0, 0);
+                        dummy.X = car.X;
+                        dummy.Y = -turn_release + car.R0;
+                        dummy.V = 0;
+                        car.Ac = car.IDM(car, dummy);
+                        used_dummyN_left = true;
+                    end
+                end
+            end
+
+            % Execute turn when reaching release point (check this FIRST)
+            if car.Y >= -turn_release
+                car.Dir = 'W';
+                car.X = -appear;
+                car.Y = -1.5;
+                car.V = 3;
+                car.Ac = 0.5 * (car.Vd - car.V);
+                car.TurnedLeft = 1;
+                insertIndex = find([CarW.X] > car.X, 1);
+                if isempty(insertIndex)
+                    CarW(end+1) = car;
+                else
+                    CarW(insertIndex+1:end+1) = CarW(insertIndex:end);
+                    CarW(insertIndex) = car;
+                end
+                CarN(i) = [];
+                continue;
+            end
+            CarN(i) = car;
+        end
+    end
+
+    %% Turn Right
+    % W -> N
+    used_dummyW = false;
+    for i = length(CarW):-1:1
+        car = CarW(i);
+        if car.TurnRight == 1 && car.TurnedRight == 0
+            % slow down so dummy car at -4
+            if car.X > turn_wait && car.X <= turn_start % problem never goes pass turn_wait
+                % Check if car ahead (i-1) is also a right-turner not yet turned
+                if i > 1 && CarW(i-1).TurnRight == 1 && CarW(i-1).TurnedRight == 0
+                    % Follow the car ahead (same pattern as left turn)
+                    car.Ac = car.IDM(car, CarW(i-1));
+                elseif car.V > 2.0  % Only use dummy if car is moving fast
+                    % No right-turner ahead, use dummy at wait point
+                    if ~used_dummyW
+                        dummy = Car(-1, 0, 0);
+                        dummy.X = -car.R0; % problem
+                        dummy.Y = car.Y;
+                        dummy.V = 0;
+                        car.Ac = car.IDM(car, dummy);
+                        used_dummyW = true;
+                    end
+                end
+            end
+            if car.X <= turn_wait  % At the waiting point
+                % Stop car at wait point
+                dummy = Car(-1, 0, 0);
+                dummy.X = turn_wait - car.R0;
+                dummy.Y = car.Y;
+                dummy.V = 0;
+                car.Ac = car.IDM(car, dummy);
+                % Check for conflict
+                t_turn = estimateTurnTime(car, turn_release, turn_wait, 5, -1.5);
+
+                conf = CarE(([CarE.X] < -turn_release) & (~[CarE.TurnRight]));  % conflicting E->W before the conflict point
+                nconf = numel(conf); % number of conflict
+
+                if nconf == 0
+                    safeToTurn = true;  % no conflicting vehicles
+                elseif nconf == 1
+                    other = conf(1);
+                    dist_to_conf = abs(-turn_release - other.X);
+                    t_arrival = dist_to_conf / max(other.V, 0.1);
+                    safeToTurn = (dist_to_conf >= minGapDist) || (t_arrival >= t_turn + minGapTime);
+                else
+                    safeToTurn = true;
+                    for j = 1:nconf
+                        other = conf(j);
+                        dist_to_conf = abs(-turn_release - other.X);
+                        t_arrival = dist_to_conf / max(other.V, 0.1);
+                        if (t_arrival < t_turn + minGapTime) && (dist_to_conf < (minGapDist + 2))
+                            safeToTurn = false; break;
+                        end
+                    end
+                end
+
+                allowOnSignal = ~strcmp(TrafficLight.EW,'green');
+                bothRight = leadRightAtWait(CarW,'W',turn_wait,wait_eps) && ...
+                    leadRightAtWait(CarE,'E',turn_wait,wait_eps);
+                leftBlocks = ~bothRight && leftTurnQueuePresent(CarE) && ...
+                    leftTurnHasPriority(CarE,'E',turn_start);
+                if ~leftBlocks && (safeToTurn || allowOnSignal)
+                    car.Dir = 'N';
+                    car.X = -1.5;
+                    car.Y = appear - out_eps;
+                    car.V = 3;
+                    car.Ac = 0.5 * (car.Vd - car.V);
+                    car.TurnedRight = 1;
+                    insertIndex = find([CarN.Y] < car.Y, 1);
+                    if isempty(insertIndex)
+                        CarN(end+1) = car;
+                    else
+                        CarN(insertIndex+1:end+1) = CarN(insertIndex:end);
+                        CarN(insertIndex) = car;
+                    end
+                    CarW(i) = [];
+                    continue;
+                end
+            end
+            CarW(i) = car;
+        end
+    end
+
+
+    % E -> S
+    used_dummyE = false;
+    for i = length(CarE):-1:1
+        car = CarE(i);
+        if car.TurnRight == 1 && car.TurnedRight == 0
+            if car.X < -turn_wait && car.X >= -turn_start
+                % Check if car ahead (i-1) is also a right-turner not yet turned
+                if i > 1 && CarW(i-1).TurnRight == 1 && CarW(i-1).TurnedRight == 0
+                    % Follow the car ahead (same pattern as left turn)
+                    car.Ac = car.IDM(car, CarW(i-1));
+                elseif car.V > 2.0  % Only use dummy if car is moving fast
+                    % No right-turner ahead, use dummy at wait point
+                    if ~used_dummyE
+                        dummy = Car(-1, 0, 0);
+                        dummy.X = car.R0;
+                        dummy.Y = car.Y;
+                        dummy.V = 0;
+                        car.Ac = car.IDM(car, dummy);
+                        used_dummyE = true;
+                    end
+                end
+            end
+            if car.X >= -turn_wait
+                dummy = Car(-1, 0, 0);
+                dummy.X = -turn_wait + car.R0;
+                dummy.Y = car.Y;
+                dummy.V = 0;
+                car.Ac = car.IDM(car, dummy);
+
+                t_turn = estimateTurnTime(car, -turn_release, -turn_wait, -5, 1.5);
+
+                conf = CarW(([CarW.X] >  turn_release) & (~[CarW.TurnRight]));
+                nconf = numel(conf);
+
+                if nconf == 0
+                    safeToTurn = true;
+                elseif nconf == 1
+                    other = conf(1);
+                    dist_to_conf = abs(turn_release - other.X);
+                    t_arrival = dist_to_conf / max(other.V, 0.1);
+                    safeToTurn = (dist_to_conf >= minGapDist) || (t_arrival >= t_turn + minGapTime);
+                else
+                    safeToTurn = true;
+                    for j = 1:nconf
+                        other = conf(j);
+                        dist_to_conf = abs(turn_release - other.X);
+                        t_arrival = dist_to_conf / max(other.V, 0.1);
+                        if (t_arrival < t_turn + minGapTime) && (dist_to_conf < (minGapDist + 2))
+                            safeToTurn = false; break;
+                        end
+                    end
+                end
+
+                allowOnSignal = ~strcmp(TrafficLight.EW,'green');
+                bothRight = leadRightAtWait(CarE,'E',turn_wait,wait_eps) && ...
+                    leadRightAtWait(CarW,'W',turn_wait,wait_eps);
+                leftBlocks = ~bothRight && leftTurnQueuePresent(CarW) && ...
+                    leftTurnHasPriority(CarW,'W',turn_start);
+
+                if ~leftBlocks && (safeToTurn || allowOnSignal)
+                    car.Dir = 'S';
+                    car.X = 1.5;
+                    car.Y = -(appear - out_eps);
+                    car.V = 3;
+                    car.Ac = 0.5 * (car.Vd - car.V);
+                    car.TurnedRight = 1;
+                    insertIndex = find([CarS.Y] > car.Y, 1);
+                    if isempty(insertIndex)
+                        CarS(end+1) = car;
+                    else
+                        CarS(insertIndex+1:end+1) = CarS(insertIndex:end);
+                        CarS(insertIndex) = car;
+                    end
+                    CarE(i) = [];
+                    continue;
+                end
+            end
+            CarE(i) = car;
+        end
+    end
+
+    % S -> W
+    used_dummyS = false;
+    for i = length(CarS):-1:1
+        car = CarS(i);
+        if car.TurnRight == 1 && car.TurnedRight == 0
+            if car.Y > turn_wait && car.Y <= turn_start
+                % Check if car ahead (i-1) is also a right-turner not yet turned
+                if i > 1 && CarW(i-1).TurnRight == 1 && CarW(i-1).TurnedRight == 0
+                    % Follow the car ahead (same pattern as left turn)
+                    car.Ac = car.IDM(car, CarW(i-1));
+                elseif car.V > 2.0  % Only use dummy if car is moving fast
+                    % No right-turner ahead, use dummy at wait point
+                    if ~used_dummyS
+                        dummy = Car(-1, 0, 0);
+                        dummy.Y = -car.R0;
+                        dummy.X = car.X;
+                        dummy.V = 0;
+                        car.Ac = car.IDM(car, dummy);
+                        used_dummyS = true;
+                    end
+                end
+            end
+            if car.Y <= turn_wait
+                dummy = Car(-1, 0, 0);
+                dummy.Y = turn_wait - car.R0;
+                dummy.X = car.X;
+                dummy.V = 0;
+                car.Ac = car.IDM(car, dummy);
+
+                t_turn = estimateTurnTime(car, turn_release, turn_wait, 1.5, 5);
+
+                conf = CarN(([CarN.Y] < -turn_release) & (~[CarN.TurnRight]));
+                nconf = numel(conf);
+
+                if nconf == 0
+                    safeToTurn = true;
+                elseif nconf == 1
+                    other = conf(1);
+                    dist_to_conf = abs(-turn_release - other.Y);
+                    t_arrival = dist_to_conf / max(other.V, 0.1);
+                    safeToTurn = (dist_to_conf >= minGapDist) || (t_arrival >= t_turn + minGapTime);
+                else
+                    safeToTurn = true;
+                    for j = 1:nconf
+                        other = conf(j);
+                        dist_to_conf = abs(-turn_release - other.Y);
+                        t_arrival = dist_to_conf / max(other.V, 0.1);
+                        if (t_arrival < t_turn + minGapTime) && (dist_to_conf < (minGapDist + 2))
+                            safeToTurn = false; break;
+                        end
+                    end
+                end
+
+                allowOnSignal = ~strcmp(TrafficLight.NS,'green');
+                bothRight = leadRightAtWait(CarS,'S',turn_wait,wait_eps) && ...
+                    leadRightAtWait(CarN,'N',turn_wait,wait_eps);
+                leftBlocks = ~bothRight && leftTurnQueuePresent(CarN) && ...
+                    leftTurnHasPriority(CarN,'N',turn_start);
+
+                if ~leftBlocks && (safeToTurn || allowOnSignal)
+                    car.Dir = 'W';
+                    car.X = -(appear - out_eps);
+                    car.Y = -1.5;
+                    car.V = 3;
+                    car.Ac = 0.5 * (car.Vd - car.V);
+                    car.TurnedRight = 1;
+                    insertIndex = find([CarW.X] > car.X, 1);
+                    if isempty(insertIndex)
+                        CarW(end+1) = car;
+                    else
+                        CarW(insertIndex+1:end+1) = CarW(insertIndex:end);
+                        CarW(insertIndex) = car;
+                    end
+                    CarS(i) = [];
+                    continue;
+                end
+            end
+            CarS(i) = car;
+        end
+    end
+
+    % N -> E
+    used_dummyN = false;
+    for i = length(CarN):-1:1
+        car = CarN(i);
+        if car.TurnRight == 1 && car.TurnedRight == 0
+            if car.Y < -turn_wait && car.Y >= -turn_start
+                % Check if car ahead (i-1) is also a right-turner not yet turned
+                if i > 1 && CarW(i-1).TurnRight == 1 && CarW(i-1).TurnedRight == 0
+                    % Follow the car ahead (same pattern as left turn)
+                    car.Ac = car.IDM(car, CarW(i-1));
+                elseif car.V > 2.0  % Only use dummy if car is moving fast
+                    % No right-turner ahead, use dummy at wait point
+                    if ~used_dummyN
+                        dummy = Car(-1, 0, 0);
+                        dummy.Y = car.R0;
+                        dummy.X = car.X;
+                        dummy.V = 0;
+                        car.Ac = car.IDM(car, dummy);
+                        used_dummyN = true;
+                    end
+                end
+            end
+            if car.Y >= -turn_wait
+                dummy = Car(-1, 0, 0);
+                dummy.Y = -turn_wait + car.R0;
+                dummy.X = car.X;
+                dummy.V = 0;
+                car.Ac = car.IDM(car, dummy);
+
+                t_turn = estimateTurnTime(car, -turn_release, -turn_wait, -1.5, -5);
+
+                conf = CarS(([CarS.Y] >  turn_release) & (~[CarS.TurnRight]));
+                nconf = numel(conf);
+
+                if nconf == 0
+                    safeToTurn = true;
+                elseif nconf == 1
+                    other = conf(1);
+                    dist_to_conf = abs(turn_release - other.Y);
+                    t_arrival = dist_to_conf / max(other.V, 0.1);
+                    safeToTurn = (dist_to_conf >= minGapDist) || (t_arrival >= t_turn + minGapTime);
+                else
+                    safeToTurn = true;
+                    for j = 1:nconf
+                        other = conf(j);
+                        dist_to_conf = abs(turn_release - other.Y);
+                        t_arrival = dist_to_conf / max(other.V, 0.1);
+                        if (t_arrival < t_turn + minGapTime) && (dist_to_conf < (minGapDist + 2))
+                            safeToTurn = false; break;
+                        end
+                    end
+                end
+
+                allowOnSignal = ~strcmp(TrafficLight.NS,'green');
+                bothRight = leadRightAtWait(CarN,'N',turn_wait,wait_eps) && ...
+                    leadRightAtWait(CarS,'S',turn_wait,wait_eps);
+                leftBlocks = ~bothRight && leftTurnQueuePresent(CarS) && ...
+                    leftTurnHasPriority(CarS,'S',turn_start);
+
+                if ~leftBlocks && (safeToTurn || allowOnSignal)
+                    car.Dir = 'E';
+                    car.X = appear - out_eps;
+                    car.Y = 1.5;
+                    car.V = 3;
+                    car.Ac = 0.5 * (car.Vd - car.V);
+                    car.TurnedRight = 1;
+                    insertIndex = find([CarE.X] < car.X, 1);
+                    if isempty(insertIndex)
+                        CarE(end+1) = car;
+                    else
+                        CarE(insertIndex+1:end+1) = CarE(insertIndex:end);
+                        CarE(insertIndex) = car;
+                    end
+                    CarN(i) = [];
+                    continue;
+                end
+            end
+            CarN(i) = car;
+        end
+    end
+
+
+    %% === Update movement ===
+    % Update N
+    for i = 1:length(CarN)
+        CarN(i).fdp(CarN(i));
+        CarN(i).V = CarN(i).fdv(CarN(i));
+    end
+
+    % Update S
+    for i = 1:length(CarS)
+        CarS(i).fdp(CarS(i));
+        CarS(i).V = CarS(i).fdv(CarS(i));
+    end
+
+    % Update E
+    for i = 1:length(CarE)
+        CarE(i).fdp(CarE(i));
+        CarE(i).V = CarE(i).fdv(CarE(i));
+    end
+
+    % Update W
+    for i = 1:length(CarW)
+        CarW(i).fdp(CarW(i));
+        CarW(i).V = CarW(i).fdv(CarW(i));
+    end
+
+    %% === Log data after movement (ALL CARS) ===
+    for i = 1:length(CarN)
+        CarLog(end+1) = struct('Time',KK*dt,'ID',CarN(i).ID,'Dir',CarN(i).Dir, ...
+            'TurnLeft',CarN(i).TurnLeft,'TurnRight',CarN(i).TurnRight, ...
+            'X',CarN(i).X,'Y',CarN(i).Y,'V',CarN(i).V,'Ac',CarN(i).Ac);
+    end
+    for i = 1:length(CarS)
+        CarLog(end+1) = struct('Time',KK*dt,'ID',CarS(i).ID,'Dir',CarS(i).Dir, ...
+            'TurnLeft',CarS(i).TurnLeft,'TurnRight',CarS(i).TurnRight, ...
+            'X',CarS(i).X,'Y',CarS(i).Y,'V',CarS(i).V,'Ac',CarS(i).Ac);
+    end
+    for i = 1:length(CarE)
+        CarLog(end+1) = struct('Time',KK*dt,'ID',CarE(i).ID,'Dir',CarE(i).Dir, ...
+            'TurnLeft',CarE(i).TurnLeft,'TurnRight',CarE(i).TurnRight, ...
+            'X',CarE(i).X,'Y',CarE(i).Y,'V',CarE(i).V,'Ac',CarE(i).Ac);
+    end
+    for i = 1:length(CarW)
+        CarLog(end+1) = struct('Time',KK*dt,'ID',CarW(i).ID,'Dir',CarW(i).Dir, ...
+            'TurnLeft',CarW(i).TurnLeft,'TurnRight',CarW(i).TurnRight, ...
+            'X',CarW(i).X,'Y',CarW(i).Y,'V',CarW(i).V,'Ac',CarW(i).Ac);
+    end
+
+    %% === SAME STRUCT, PER-LANE LOGS ===
+    for i = 1:length(CarN)
+        CarLogN(end+1) = struct('Time',KK*dt,'ID',CarN(i).ID,'Dir',CarN(i).Dir, ...
+            'TurnLeft',CarN(i).TurnLeft,'TurnRight',CarN(i).TurnRight, ...
+            'X',CarN(i).X,'Y',CarN(i).Y,'V',CarN(i).V,'Ac',CarN(i).Ac);
+    end
+    for i = 1:length(CarS)
+        CarLogS(end+1) = struct('Time',KK*dt,'ID',CarS(i).ID,'Dir',CarS(i).Dir, ...
+            'TurnLeft',CarS(i).TurnLeft,'TurnRight',CarS(i).TurnRight, ...
+            'X',CarS(i).X,'Y',CarS(i).Y,'V',CarS(i).V,'Ac',CarS(i).Ac);
+    end
+    for i = 1:length(CarE)
+        CarLogE(end+1) = struct('Time',KK*dt,'ID',CarE(i).ID,'Dir',CarE(i).Dir, ...
+            'TurnLeft',CarE(i).TurnLeft,'TurnRight',CarE(i).TurnRight, ...
+            'X',CarE(i).X,'Y',CarE(i).Y,'V',CarE(i).V,'Ac',CarE(i).Ac);
+    end
+    for i = 1:length(CarW)
+        CarLogW(end+1) = struct('Time',KK*dt,'ID',CarW(i).ID,'Dir',CarW(i).Dir, ...
+            'TurnLeft',CarW(i).TurnLeft,'TurnRight',CarW(i).TurnRight, ...
+            'X',CarW(i).X,'Y',CarW(i).Y,'V',CarW(i).V,'Ac',CarW(i).Ac);
+    end
+
+
+
+    %% === Remove cars out of bounds ===
+    % N
+    CarN = CarN(abs([CarN.X]) <= 170 & abs([CarN.Y]) <= 170);
+    % S
+    CarS = CarS(abs([CarS.X]) <= 170 & abs([CarS.Y]) <= 170);
+    % E
+    CarE = CarE(abs([CarE.X]) <= 170 & abs([CarE.Y]) <= 170);
+    % W
+    CarW = CarW(abs([CarW.X]) <= 170 & abs([CarW.Y]) <= 170);
+end
+
+
+%% === Plot ===
+plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_idm.png');
+plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_idm.png');
+
+
+
+%% === Helper Functions ===
+function t_turn = estimateTurnTime(car, turn_release, turn_wait, turn_waitX, turn_waitY)
+% estimateTurnTime - Estimate time needed to complete a right turn
+% using realistic average speed based on current and desired velocity
+
+% Geometric breakdown
+d_entry = sqrt((car.X - turn_waitX)^2 + (car.Y - turn_waitY)^2);  % from car to arc start
+flat = (turn_wait - turn_release) / 2;                 % flat segment before/after arc
+arc = sqrt(2 * flat^2);                                 % diagonal arc approximation
+total_dist = d_entry + 2 * flat + arc;
+
+% Realistic turn speed (avg of current and desired, capped)
+v_turn = min((car.V + car.Vd) / 2, 3);  % in m/s, capped at 3
+
+% Final estimated turn time
+t_turn = total_dist / max(v_turn, 0.1);  % avoid divide-by-zero
+end
+
+function [lamN, lamS, lamE, lamW] = getApproachRates(tsec, stages, lamNS_axis, lamEW_axis)
+if tsec < stages(2)
+    k = 1;
+elseif tsec < stages(3)
+    k = 2;
+else
+    k = 3;
+end
+lamNS = lamNS_axis(k);  lamEW = lamEW_axis(k);
+lamN = 0.5 * lamNS;  lamS = 0.5 * lamNS;
+lamE = 0.5 * lamEW;  lamW = 0.5 * lamEW;
+end
+
+function ok = canSpawnY(list, y0, gap)
+if isempty(list), ok = true; return; end
+ok = all(abs([list.Y] - y0) >= gap);
+end
+
+function ok = canSpawnX(list, x0, gap)
+if isempty(list), ok = true; return; end
+ok = all(abs([list.X] - x0) >= gap);
+end
+
+function hasLeftQueue = leftTurnQueuePresent(list)
+% True if ANY car on that approach plans to left-turn and hasn't turned yet.
+if isempty(list), hasLeftQueue = false; return; end
+hasLeftQueue = any(([list.TurnLeft] == 1) & (~[list.TurnedLeft]));
+end
+
+function waitLeft = leftTurnHasPriority(opList, oppDir, prioWin)
+% Yield only if a left-turner is near the stop line (within prioWin meters)
+waitLeft = false; if isempty(opList), return; end
+switch oppDir
+    case 'E', cand = ([opList.TurnLeft]==1)&(~[opList.TurnedLeft])&([opList.X] >= -prioWin);
+    case 'W', cand = ([opList.TurnLeft]==1)&(~[opList.TurnedLeft])&([opList.X] <=  prioWin);
+    case 'N', cand = ([opList.TurnLeft]==1)&(~[opList.TurnedLeft])&([opList.Y] >= -prioWin);
+    case 'S', cand = ([opList.TurnLeft]==1)&(~[opList.TurnedLeft])&([opList.Y] <=  prioWin);
+    otherwise, cand = false(size(opList));
+end
+waitLeft = any(cand);
+end
+
+function yes = leadRightAtWait(list, dir, turn_wait, eps)
+% True if the lead car on that approach is a right-turner at the wait point
+yes = false; if isempty(list), return; end
+switch dir
+    case 'E' % -X -> 0 (lead = max X)
+        [~,k] = max([list.X]); c = list(k); yes = c.TurnRight && ~c.TurnedRight && abs(c.X + turn_wait) <= eps;
+    case 'W' % +X -> 0 (lead = min X)
+        [~,k] = min([list.X]); c = list(k); yes = c.TurnRight && ~c.TurnedRight && abs(c.X - turn_wait) <= eps;
+    case 'N' % -Y -> 0 (lead = max Y)
+        [~,k] = max([list.Y]); c = list(k); yes = c.TurnRight && ~c.TurnedRight && abs(c.Y + turn_wait) <= eps;
+    case 'S' % +Y -> 0 (lead = min Y)
+        [~,k] = min([list.Y]); c = list(k); yes = c.TurnRight && ~c.TurnedRight && abs(c.Y - turn_wait) <= eps;
+    otherwise
+        yes = false;
+end
+end
+
+function phase = phaseName(t, gNS, yNS, ar1, gEW, yEW)
+% Returns a readable phase name based on t within the cycle
+if t < gNS
+    phase = 'NS_GREEN';
+elseif t < gNS + yNS
+    phase = 'NS_YELLOW';
+elseif t < gNS + yNS + ar1
+    phase = 'ALL_RED_1';
+elseif t < gNS + yNS + ar1 + gEW
+    phase = 'EW_GREEN';
+elseif t < gNS + yNS + ar1 + yEW
+    phase = 'EW_YELLOW';
+else
+    phase = 'ALL_RED_2';
+end
+end
+
+
+
