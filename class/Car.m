@@ -31,6 +31,9 @@ classdef Car<handle
 
         % Short storage config
         SHORT_K = 20;  % keep last K entries in short storage
+
+        % warm-start vector for mpc
+        U_warm = []; 
     end
 
     methods
@@ -252,7 +255,7 @@ classdef Car<handle
 
             % --- Build (and cache) time-invariant prediction matrices ---
             % v = Av + S_v * U,   s = As + S_s * U
-            persistent T_c dt_c S_v S_s H_qp Q_u Ak_pows U_warm
+            persistent T_c dt_c S_v S_s H_qp Q_u Ak_pows
             if isempty(T_c) || T_c~=T || isempty(dt_c) || dt_c~=dt
                 % Precompute A^k
                 Ak_pows = cell(T+1,1);
