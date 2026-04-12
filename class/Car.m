@@ -49,7 +49,7 @@ classdef Car<handle
                 obj.TurnLeft = 1;
             end
 
-            if rand < 0.15 && obj.TurnLeft == 0  % 25% chance to turn left
+            if rand < 0.15 && obj.TurnLeft == 0  % 15% chance to turn left
                 obj.TurnRight = 1;
             end
 
