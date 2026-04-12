@@ -220,7 +220,7 @@ classdef RSU<handle
             end
         end
 
-        function [tau, trajectory] = EstimateArrivalTimeMPC(obj, vehicleID, trafficLight, precedingData)
+        function [tau, trajectory] = EstimateArrivalTimeIDM (obj, vehicleID, trafficLight, precedingData)
             tempData = obj.GetVehicleData(vehicleID);
             if isempty(tempData)
                 tau = Inf; trajectory = []; return;
@@ -352,10 +352,10 @@ classdef RSU<handle
             n = length(sorted_ids);
             if n==0, ids=[]; taus=[]; return; end
             taus = zeros(1, n);
-            [taus(1), ~] = obj.EstimateArrivalTimeMPC(sorted_ids(1), trafficLight, []);
+            [taus(1), ~] = obj.EstimateArrivalTimeIDM (sorted_ids(1), trafficLight, []);
             for i = 2:n
                 precedingData = obj.GetVehicleData(sorted_ids(i-1));
-                [tau_follow, ~] = obj.EstimateArrivalTimeMPC(sorted_ids(i), trafficLight, precedingData);
+                [tau_follow, ~] = obj.EstimateArrivalTimeIDM (sorted_ids(i), trafficLight, precedingData);
                 tau_headway = taus(i-1) + obj.h_time;
                 taus(i) = max(tau_follow, tau_headway);
             end
@@ -472,6 +472,9 @@ classdef RSU<handle
                 if cost<min_cost, min_cost=cost; opt_p=p; best_tau_W=tau_W; best_tau_E=tau_E; end
             end
             coordinated_tau_W=best_tau_W; coordinated_tau_E=best_tau_E;
+            obj.opt_results.EW = struct('opt_p',opt_p,'tau_E',coordinated_tau_E,'tau_W',coordinated_tau_W,...
+                'tau_bar_E',tau_bar_E,'tau_bar_W',tau_bar_W,'ids_E',ids_E,'ids_W',ids_W,...
+                'turningCarID',turningCarID,'min_cost',min_cost);
         end
 
         function [opt_p, coordinated_tau_N, coordinated_tau_S, min_cost] = OptimizeRightTurn_NS_Reverse(obj, turningCarID, trafficLight)
@@ -498,6 +501,9 @@ classdef RSU<handle
                 if cost<min_cost, min_cost=cost; opt_p=p; best_tau_N=tau_N; best_tau_S=tau_S; end
             end
             coordinated_tau_N=best_tau_N; coordinated_tau_S=best_tau_S;
+            obj.opt_results.NS = struct('opt_p',opt_p,'tau_N',coordinated_tau_N,'tau_S',coordinated_tau_S,...
+                'tau_bar_N',tau_bar_N,'tau_bar_S',tau_bar_S,'ids_N',ids_N,'ids_S',ids_S,...
+                'turningCarID',turningCarID,'min_cost',min_cost);
         end
 
         %% VELOCITY RECOMMENDATION
