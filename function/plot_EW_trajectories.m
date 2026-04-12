@@ -1,5 +1,5 @@
 function plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, outFile, opts)
-% Clean version: all trajectories black, only traffic light color at y=0.
+% Colored version: straight=black, left turn=blue, right turn=red.
 % x-axis = time [s], y-axis = signed distance to stop line (0 = stop line)
 
 if nargin < 5 || isempty(outFile), outFile = 'EW.png'; end
@@ -39,8 +39,8 @@ if draw_guides
     end
 end
 
-% Plot all E trajectories (black)
-plot_traj_black(hAx1, CarLogE, @(X) max(0, (-stop_line) - X));
+% Plot all E trajectories (colored by turn type)
+plot_traj_colored(hAx1, CarLogE, @(X) max(0, (-stop_line) - X));
 
 ylim(hAx1,[0 auto_ylim(hAx1)]);
 
@@ -61,7 +61,7 @@ if draw_guides
     end
 end
 
-plot_traj_black(hAx2, CarLogW, @(X) -max(0, X - stop_line));
+plot_traj_colored(hAx2, CarLogW, @(X) -max(0, X - stop_line));
 
 ylim(hAx2,[-auto_ylim(hAx2) 0]);
 
@@ -96,16 +96,35 @@ dy = light_width/2;
 patch(ax,[t1 t2 t2 t1],[-dy -dy +dy +dy],c,'EdgeColor','none','FaceAlpha',0.95);
 end
 
-function plot_traj_black(ax, CLog, distFun)
+function plot_traj_colored(ax, CLog, distFun)
 if isempty(CLog), return; end
 ids = unique([CLog.ID]);
+h_straight = []; h_left = []; h_right = [];
 for ii = 1:numel(ids)
     id = ids(ii);
     sel = CLog([CLog.ID]==id);
     [t,idx] = sort([sel.Time]); sel = sel(idx);
     y = distFun([sel.X]);
-    plot(ax,t,y,'k','LineWidth',0.9); % pure black lines only
+    % Determine turn type from first record of this car
+    is_left  = sel(1).TurnLeft;
+    is_right = sel(1).TurnRight;
+    if is_right
+        h = plot(ax,t,y,'Color',[0.85 0.15 0.15],'LineWidth',0.9);
+        if isempty(h_right), h_right = h; end
+    elseif is_left
+        h = plot(ax,t,y,'Color',[0.15 0.35 0.85],'LineWidth',0.9);
+        if isempty(h_left), h_left = h; end
+    else
+        h = plot(ax,t,y,'k','LineWidth',0.9);
+        if isempty(h_straight), h_straight = h; end
+    end
 end
+% Add legend
+legs = {}; hs = [];
+if ~isempty(h_straight), hs(end+1)=h_straight; legs{end+1}='Straight'; end
+if ~isempty(h_left),     hs(end+1)=h_left;     legs{end+1}='Left turn'; end
+if ~isempty(h_right),    hs(end+1)=h_right;    legs{end+1}='Right turn'; end
+if ~isempty(hs), legend(ax, hs, legs, 'Location','northeast','FontSize',8); end
 end
 
 function ym = auto_ylim(ax)
@@ -121,4 +140,3 @@ end
 function v = getfielddef(s,f,d)
 if isstruct(s) && isfield(s,f), v = s.(f); else, v = d; end
 end
-

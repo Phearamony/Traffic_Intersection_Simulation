@@ -1,5 +1,5 @@
 function plot_EW_accelerations(LightLog, CarLogE, CarLogW, ~, outFile, opts)
-% Acceleration plot: all trajectories black, traffic light color strip.
+% Acceleration plot: straight=black, left turn=blue, right turn=red.
 % x-axis = time [s], y-axis = acceleration [m/s^2]
 % East subplot: light strip at top (y=0 line area)
 % West subplot: light strip at bottom
@@ -26,8 +26,8 @@ title(hAx1,'(a) Acceleration of cars from East');
 xlabel(hAx1,'Time [s]'); ylabel(hAx1,'Acceleration [m/s^2]');
 xlim(hAx1,[0 tMax]);
 
-% Plot all E trajectories (black) - acceleration
-plot_accel_black(hAx1, CarLogE);
+% Plot all E trajectories (colored by turn type) - acceleration
+plot_accel_colored(hAx1, CarLogE);
 
 % Get y-limits first, then paint light strip at top
 yl = auto_ylim_accel(hAx1);
@@ -42,8 +42,8 @@ title(hAx2,'(b) Acceleration of cars from West');
 xlabel(hAx2,'Time [s]'); ylabel(hAx2,'Acceleration [m/s^2]');
 xlim(hAx2,[0 tMax]);
 
-% Plot all W trajectories (black) - acceleration (no flipping!)
-plot_accel_black(hAx2, CarLogW);
+% Plot all W trajectories (colored by turn type) - acceleration (no flipping!)
+plot_accel_colored(hAx2, CarLogW);
 
 % Get y-limits
 yl2 = auto_ylim_accel(hAx2);
@@ -88,19 +88,38 @@ patch(ax, [t1 t2 t2 t1], [y_center-dy y_center-dy y_center+dy y_center+dy], ...
       c, 'EdgeColor', 'none', 'FaceAlpha', 0.95);
 end
 
-function plot_accel_black(ax, CLog)
-% Plot acceleration for each car ID
+function plot_accel_colored(ax, CLog)
+% Plot acceleration for each car ID, colored by turn type
 if isempty(CLog), return; end
 
 ids = unique([CLog.ID]);
+h_straight = []; h_left = []; h_right = [];
 for ii = 1:numel(ids)
     id = ids(ii);
     sel = CLog([CLog.ID] == id);
     [t, idx] = sort([sel.Time]); 
     sel = sel(idx);
     a = [sel.Ac];
-    plot(ax, t, a, 'k', 'LineWidth', 0.9);
+    % Determine turn type from first record
+    is_left  = sel(1).TurnLeft;
+    is_right = sel(1).TurnRight;
+    if is_right
+        h = plot(ax, t, a, 'Color', [0.85 0.15 0.15], 'LineWidth', 0.9);
+        if isempty(h_right), h_right = h; end
+    elseif is_left
+        h = plot(ax, t, a, 'Color', [0.15 0.35 0.85], 'LineWidth', 0.9);
+        if isempty(h_left), h_left = h; end
+    else
+        h = plot(ax, t, a, 'k', 'LineWidth', 0.9);
+        if isempty(h_straight), h_straight = h; end
+    end
 end
+% Add legend
+legs = {}; hs = [];
+if ~isempty(h_straight), hs(end+1)=h_straight; legs{end+1}='Straight'; end
+if ~isempty(h_left),     hs(end+1)=h_left;     legs{end+1}='Left turn'; end
+if ~isempty(h_right),    hs(end+1)=h_right;    legs{end+1}='Right turn'; end
+if ~isempty(hs), legend(ax, hs, legs, 'Location','northeast','FontSize',8); end
 end
 
 function ym = auto_ylim_accel(ax)
