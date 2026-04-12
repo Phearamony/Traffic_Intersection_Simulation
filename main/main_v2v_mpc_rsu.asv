@@ -38,6 +38,8 @@ out_eps = 0.5;   % meter past the stop line to drop a turning vehicle
 wait_eps = 0.3;   % meter window to detect “at the wait point”
 appear = 3;
 
+T_reset_short = 10; % Reset short/temp storage every 10 seconds
+
 % --- Log ---
 CarLog = struct('Time', {}, 'ID', {}, 'Dir', {}, 'TurnLeft', {},'TurnRight', {}, 'X', {}, 'Y', {}, 'V', {}, 'Ac', {});
 CarLogN = CarLog;  CarLogS = CarLog;  CarLogE = CarLog;  CarLogW = CarLog;
@@ -58,6 +60,11 @@ global RSUObjs
 RSU1 = RSU(1, 0, 0);
 RSUObjs = [RSU1];
 
+% Track previous traffic light state for green phase detection
+prev_TrafficLight = struct('NS', 'red', 'EW', 'red');
+opt_run_EW = false;
+opt_run_NS = false;
+
 hFig = figure;
 set(hFig, 'Position', [100, 100, 1000, 800]);
 
@@ -72,8 +79,8 @@ lambdaNS_axis = [0.30, 0.45, 0.60];  % NS total
 lambdaEW_axis = [0.25, 0.40, 0.55];  % EW total
 
 % Activate Each Lane
-CARN = true;
-CARS = true;
+CARN = false;
+CARS = false;
 CARE = true;
 CARW = true;
 
@@ -144,6 +151,7 @@ end
 for KK = 1:KKmax
     %% === Traffic Light Phases ===
     t = mod(KK*dt, Cycle);
+    tsec = KK * dt;  % Current time in seconds
 
     if t < gNS
         TrafficLight.NS = 'green';  TrafficLight.EW = 'red';
@@ -169,18 +177,52 @@ for KK = 1:KKmax
         'Phase',     phs, ...
         'NS',        TrafficLight.NS, ...
         'EW',        TrafficLight.EW );
-    
+
+    % Detect GREEN PHASE START and run optimization
+    EW_green_start = strcmp(TrafficLight.EW, 'green') && ~strcmp(prev_TrafficLight.EW, 'green');
+    NS_green_start = strcmp(TrafficLight.NS, 'green') && ~strcmp(prev_TrafficLight.NS, 'green');
+
+    % Run optimization at start of each green phase
+    if EW_green_start
+        fprintf('\n========================================\n');
+        fprintf('[t=%.1f] EW GREEN START - Running RSU optimization...\n', tsec);
+        fprintf('========================================\n');
+        RSU1.RunGreenPhaseOptimization(tsec, 'EW', TrafficLight);
+        RSU1.PrintArrivalTimes(TrafficLight);
+        opt_run_EW = true;
+    end
+
+    if NS_green_start
+        fprintf('\n========================================\n');
+        fprintf('[t=%.1f] NS GREEN START - Running RSU optimization...\n', tsec);
+        fprintf('========================================\n');
+        RSU1.RunGreenPhaseOptimization(tsec, 'NS', TrafficLight);
+        RSU1.PrintArrivalTimes(TrafficLight);
+        opt_run_NS = true;
+    end
+
+    % Reset optimization flag when phase ends
+    if ~strcmp(TrafficLight.EW, 'green')
+        opt_run_EW = false;
+    end
+    if ~strcmp(TrafficLight.NS, 'green')
+        opt_run_NS = false;
+    end
+
+    % Update previous state for next iteration
+    prev_TrafficLight = TrafficLight;
+
     % Reset V2X storage short
     if mod(tsec, T_reset_short) < dt
         % Reset RSU short storage
         RSU1.ResetAllShort();
-        
+
         % Reset all cars' short storage
         for i = 1:length(CarN), CarN(i).ResetAllShort(); end
         for i = 1:length(CarS), CarS(i).ResetAllShort(); end
         for i = 1:length(CarE), CarE(i).ResetAllShort(); end
         for i = 1:length(CarW), CarW(i).ResetAllShort(); end
-        
+
         % Optional: Print debug message
         % fprintf('t=%.1f: Reset V2X short storage\n', tsec);
     end
@@ -191,7 +233,6 @@ for KK = 1:KKmax
     end
 
     %% === Spawn new cars (Poisson, ramps from light->heavy) ===
-    tsec = KK * dt;
 
     % Get per-approach rates (veh/s)
     [lamN, lamS, lamE, lamW] = getApproachRates(tsec, DemandStages, lambdaNS_axis, lambdaEW_axis);
@@ -467,7 +508,6 @@ for KK = 1:KKmax
             minSafeGap = 5.0;  % Minimum safe following distance
 
             % Predict positions after this timestep
-            dt = 0.5;  % Your timestep
             myNextX = car.X + car.V * dt + 0.5 * car.Ac * dt^2;
             leadNextX = leadCar.X + leadCar.V * dt + 0.5 * leadCar.Ac * dt^2;
             nextGap = leadNextX - myNextX;
@@ -511,7 +551,6 @@ for KK = 1:KKmax
             gap = car.X - leadCar.X;
             minSafeGap = 5.0;  % Minimum safe following distance
             % Predict positions after this timestep
-            dt = 0.5;  % Your timestep
             myNextX = car.X - car.V * dt - 0.5 * car.Ac * dt^2;
             leadNextX = leadCar.X - leadCar.V * dt - 0.5 * leadCar.Ac * dt^2;
             nextGap = myNextX - leadNextX;
@@ -553,7 +592,6 @@ for KK = 1:KKmax
             gap = leadCar.Y - car.Y;
             minSafeGap = 5.0;  % Minimum safe following distance
             % Predict positions after this timestep
-            dt = 0.5;  % Your timestep
             myNextY = car.Y + car.V * dt + 0.5 * car.Ac * dt^2;
             leadNextY = leadCar.Y + leadCar.V * dt + 0.5 * leadCar.Ac * dt^2;
             nextGap = leadNextY - myNextY;
@@ -595,7 +633,6 @@ for KK = 1:KKmax
             gap = car.Y - leadCar.Y;
             minSafeGap = 5.0;  % Minimum safe following distance
             % Predict positions after this timestep
-            dt = 0.5;  % Your timestep
             myNextY = car.Y - car.V * dt - 0.5 * car.Ac * dt^2;
             leadNextY = leadCar.Y - leadCar.V * dt - 0.5 * leadCar.Ac * dt^2;
             nextGap = myNextY - leadNextY;
@@ -838,60 +875,53 @@ for KK = 1:KKmax
     for i = length(CarW):-1:1
         car = CarW(i);
         if car.TurnRight == 1 && car.TurnedRight == 0
-            % slow down so dummy car at -4
+
+            % Approaching turn zone - slow down
             if car.X > turn_wait && car.X <= turn_start
-                % Check if car ahead (i-1) is also a right-turner not yet turned
                 if i > 1 && CarW(i-1).TurnRight == 1 && CarW(i-1).TurnedRight == 0
-                    % Follow the car ahead (same pattern as left turn)
                     car.Ac = car.MPC(car, CarW(i-1));
-                elseif car.V > 2.0  % Only use dummy if car is moving fast
-                    % No right-turner ahead, use dummy at wait point
+                elseif car.V > 2.0
                     if ~used_dummyW_right
                         dummy = Car(-1, 0, 0);
                         dummy.X = turn_wait - car.R0;
                         dummy.Y = car.Y;
                         dummy.V = 0;
+                        dummy.Dir = 'W';
                         car.Ac = car.MPC(car, dummy);
                         used_dummyW_right = true;
                     end
                 end
             end
-            if car.X <= turn_wait  % At the waiting point
-                car.X = turn_wait;  % Force position to turn_wait
-                car.V = 0;          % Force stop
-                car.Ac = 0;         % No acceleration
 
-                % Check for conflict
-                t_turn = estimateTurnTime(car, turn_release, turn_wait, 5, -1.5);
+            % At waiting point - check RSU decision
+            if car.X <= turn_wait
+                car.X = turn_wait;
+                car.V = 0;
+                car.Ac = 0;
 
-                conf = CarE(([CarE.X] < -turn_release) & (~[CarE.TurnRight]));
-                nconf = numel(conf);
+                % ========== RSU-BASED DECISION ==========
+                x2v = car.GetLastX2V();
+                canTurn = false;
 
-                if nconf == 0
-                    safeToTurn = true;
-                elseif nconf == 1
-                    other = conf(1);
-                    dist_to_conf = abs(-turn_release - other.X);
-                    t_arrival = dist_to_conf / max(other.V, 0.1);
-                    safeToTurn = (dist_to_conf >= minGapDist) || (t_arrival >= t_turn + minGapTime);
-                else
-                    safeToTurn = true;
-                    for j = 1:nconf
-                        other = conf(j);
-                        dist_to_conf = abs(-turn_release - other.X);
-                        t_arrival = dist_to_conf / max(other.V, 0.1);
-                        if (t_arrival < t_turn + minGapTime) && (dist_to_conf < (minGapDist + 2))
-                            safeToTurn = false; break;
-                        end
+                if ~isempty(x2v) && isfield(x2v, 'turn_signal')
+                    if x2v.turn_signal == 1
+                        % RSU says: PROCEED
+                        canTurn = true;
+                    elseif x2v.turn_signal == -1
+                        % RSU says: WAIT
+                        canTurn = false;
+                    else
+                        % RSU has no opinion (turn_signal == 0)
+                        % Fallback to traffic light rule
+                        canTurn = ~strcmp(TrafficLight.EW, 'green');
                     end
+                else
+                    % No RSU data - fallback to traffic light
+                    canTurn = ~strcmp(TrafficLight.EW, 'green');
                 end
+                % =========================================
 
-                allowOnSignal = ~strcmp(TrafficLight.EW,'green');
-                bothRight = leadRightAtWait(CarW,'W',turn_wait,wait_eps) && ...
-                    leadRightAtWait(CarE,'E',turn_wait,wait_eps);
-                leftBlocks = ~bothRight && leftTurnQueuePresent(CarE) && ...
-                    leftTurnHasPriority(CarE,'E',turn_start);
-                if ~leftBlocks && (safeToTurn || allowOnSignal)
+                if canTurn
                     spawnY = appear - out_eps;
                     if isSpawnClear(CarN, 'Y', spawnY, 5.0)
                         car.Dir = 'N';
@@ -922,59 +952,48 @@ for KK = 1:KKmax
     for i = length(CarE):-1:1
         car = CarE(i);
         if car.TurnRight == 1 && car.TurnedRight == 0
+
+            % Approaching turn zone - slow down
             if car.X < -turn_wait && car.X >= -turn_start
-                % Check if car ahead (i-1) is also a right-turner not yet turned
                 if i > 1 && CarE(i-1).TurnRight == 1 && CarE(i-1).TurnedRight == 0
-                    % Follow the car ahead (same pattern as left turn)
                     car.Ac = car.MPC(car, CarE(i-1));
-                elseif car.V > 2.0  % Only use dummy if car is moving fast
-                    % No right-turner ahead, use dummy at wait point
+                elseif car.V > 2.0
                     if ~used_dummyE_right
                         dummy = Car(-1, 0, 0);
                         dummy.X = -turn_wait + car.R0;
                         dummy.Y = car.Y;
                         dummy.V = 0;
+                        dummy.Dir = 'E';
                         car.Ac = car.MPC(car, dummy);
                         used_dummyE_right = true;
                     end
                 end
             end
+
+            % At waiting point - check RSU decision
             if car.X >= -turn_wait
-                car.X = -turn_wait;  % Force position to turn_wait
-                car.V = 0;          % Force stop
-                car.Ac = 0;         % No acceleration
+                car.X = -turn_wait;
+                car.V = 0;
+                car.Ac = 0;
 
-                t_turn = estimateTurnTime(car, -turn_release, -turn_wait, -5, 1.5);
+                % ========== RSU-BASED DECISION ==========
+                x2v = car.GetLastX2V();
+                canTurn = false;
 
-                conf = CarW(([CarW.X] >  turn_release) & (~[CarW.TurnRight]));
-                nconf = numel(conf);
-
-                if nconf == 0
-                    safeToTurn = true;
-                elseif nconf == 1
-                    other = conf(1);
-                    dist_to_conf = abs(turn_release - other.X);
-                    t_arrival = dist_to_conf / max(other.V, 0.1);
-                    safeToTurn = (dist_to_conf >= minGapDist) || (t_arrival >= t_turn + minGapTime);
-                else
-                    safeToTurn = true;
-                    for j = 1:nconf
-                        other = conf(j);
-                        dist_to_conf = abs(turn_release - other.X);
-                        t_arrival = dist_to_conf / max(other.V, 0.1);
-                        if (t_arrival < t_turn + minGapTime) && (dist_to_conf < (minGapDist + 2))
-                            safeToTurn = false; break;
-                        end
+                if ~isempty(x2v) && isfield(x2v, 'turn_signal')
+                    if x2v.turn_signal == 1
+                        canTurn = true;
+                    elseif x2v.turn_signal == -1
+                        canTurn = false;
+                    else
+                        canTurn = ~strcmp(TrafficLight.EW, 'green');
                     end
+                else
+                    canTurn = ~strcmp(TrafficLight.EW, 'green');
                 end
+                % =========================================
 
-                allowOnSignal = ~strcmp(TrafficLight.EW,'green');
-                bothRight = leadRightAtWait(CarE,'E',turn_wait,wait_eps) && ...
-                    leadRightAtWait(CarW,'W',turn_wait,wait_eps);
-                leftBlocks = ~bothRight && leftTurnQueuePresent(CarW) && ...
-                    leftTurnHasPriority(CarW,'W',turn_start);
-
-                if ~leftBlocks && (safeToTurn || allowOnSignal)
+                if canTurn
                     spawnY = -(appear - out_eps);
                     if isSpawnClear(CarS, 'Y', spawnY, 5.0)
                         car.Dir = 'S';
@@ -1004,59 +1023,48 @@ for KK = 1:KKmax
     for i = length(CarS):-1:1
         car = CarS(i);
         if car.TurnRight == 1 && car.TurnedRight == 0
+
+            % Approaching turn zone - slow down
             if car.Y > turn_wait && car.Y <= turn_start
-                % Check if car ahead (i-1) is also a right-turner not yet turned
                 if i > 1 && CarS(i-1).TurnRight == 1 && CarS(i-1).TurnedRight == 0
-                    % Follow the car ahead (same pattern as left turn)
                     car.Ac = car.MPC(car, CarS(i-1));
-                elseif car.V > 2.0  % Only use dummy if car is moving fast
-                    % No right-turner ahead, use dummy at wait point
+                elseif car.V > 2.0
                     if ~used_dummyS_right
                         dummy = Car(-1, 0, 0);
                         dummy.Y = turn_wait - car.R0;
                         dummy.X = car.X;
                         dummy.V = 0;
+                        dummy.Dir = 'S';
                         car.Ac = car.MPC(car, dummy);
                         used_dummyS_right = true;
                     end
                 end
             end
+
+            % At waiting point - check RSU decision
             if car.Y <= turn_wait
-                car.Y = turn_wait;  % Force position to turn_wait
-                car.V = 0;          % Force stop
-                car.Ac = 0;         % No acceleration
+                car.Y = turn_wait;
+                car.V = 0;
+                car.Ac = 0;
 
-                t_turn = estimateTurnTime(car, turn_release, turn_wait, 1.5, 5);
+                % ========== RSU-BASED DECISION ==========
+                x2v = car.GetLastX2V();
+                canTurn = false;
 
-                conf = CarN(([CarN.Y] < -turn_release) & (~[CarN.TurnRight]));
-                nconf = numel(conf);
-
-                if nconf == 0
-                    safeToTurn = true;
-                elseif nconf == 1
-                    other = conf(1);
-                    dist_to_conf = abs(-turn_release - other.Y);
-                    t_arrival = dist_to_conf / max(other.V, 0.1);
-                    safeToTurn = (dist_to_conf >= minGapDist) || (t_arrival >= t_turn + minGapTime);
-                else
-                    safeToTurn = true;
-                    for j = 1:nconf
-                        other = conf(j);
-                        dist_to_conf = abs(-turn_release - other.Y);
-                        t_arrival = dist_to_conf / max(other.V, 0.1);
-                        if (t_arrival < t_turn + minGapTime) && (dist_to_conf < (minGapDist + 2))
-                            safeToTurn = false; break;
-                        end
+                if ~isempty(x2v) && isfield(x2v, 'turn_signal')
+                    if x2v.turn_signal == 1
+                        canTurn = true;
+                    elseif x2v.turn_signal == -1
+                        canTurn = false;
+                    else
+                        canTurn = ~strcmp(TrafficLight.NS, 'green');
                     end
+                else
+                    canTurn = ~strcmp(TrafficLight.NS, 'green');
                 end
+                % =========================================
 
-                allowOnSignal = ~strcmp(TrafficLight.NS,'green');
-                bothRight = leadRightAtWait(CarS,'S',turn_wait,wait_eps) && ...
-                    leadRightAtWait(CarN,'N',turn_wait,wait_eps);
-                leftBlocks = ~bothRight && leftTurnQueuePresent(CarN) && ...
-                    leftTurnHasPriority(CarN,'N',turn_start);
-
-                if ~leftBlocks && (safeToTurn || allowOnSignal)
+                if canTurn
                     spawnX = -(appear - out_eps);
                     if isSpawnClear(CarW, 'X', spawnX, 5.0)
                         car.Dir = 'W';
@@ -1086,59 +1094,48 @@ for KK = 1:KKmax
     for i = length(CarN):-1:1
         car = CarN(i);
         if car.TurnRight == 1 && car.TurnedRight == 0
+
+            % Approaching turn zone - slow down
             if car.Y < -turn_wait && car.Y >= -turn_start
-                % Check if car ahead (i-1) is also a right-turner not yet turned
                 if i > 1 && CarN(i-1).TurnRight == 1 && CarN(i-1).TurnedRight == 0
-                    % Follow the car ahead (same pattern as left turn)
                     car.Ac = car.MPC(car, CarN(i-1));
-                elseif car.V > 2.0  % Only use dummy if car is moving fast
-                    % No right-turner ahead, use dummy at wait point
+                elseif car.V > 2.0
                     if ~used_dummyN_right
                         dummy = Car(-1, 0, 0);
                         dummy.Y = -turn_wait + car.R0;
                         dummy.X = car.X;
                         dummy.V = 0;
+                        dummy.Dir = 'N';
                         car.Ac = car.MPC(car, dummy);
                         used_dummyN_right = true;
                     end
                 end
             end
+
+            % At waiting point - check RSU decision
             if car.Y >= -turn_wait
-                car.Y = -turn_wait;  % Force position to turn_wait
-                car.V = 0;          % Force stop
-                car.Ac = 0;         % No acceleration
+                car.Y = -turn_wait;
+                car.V = 0;
+                car.Ac = 0;
 
-                t_turn = estimateTurnTime(car, -turn_release, -turn_wait, -1.5, -5);
+                % ========== RSU-BASED DECISION ==========
+                x2v = car.GetLastX2V();
+                canTurn = false;
 
-                conf = CarS(([CarS.Y] >  turn_release) & (~[CarS.TurnRight]));
-                nconf = numel(conf);
-
-                if nconf == 0
-                    safeToTurn = true;
-                elseif nconf == 1
-                    other = conf(1);
-                    dist_to_conf = abs(turn_release - other.Y);
-                    t_arrival = dist_to_conf / max(other.V, 0.1);
-                    safeToTurn = (dist_to_conf >= minGapDist) || (t_arrival >= t_turn + minGapTime);
-                else
-                    safeToTurn = true;
-                    for j = 1:nconf
-                        other = conf(j);
-                        dist_to_conf = abs(turn_release - other.Y);
-                        t_arrival = dist_to_conf / max(other.V, 0.1);
-                        if (t_arrival < t_turn + minGapTime) && (dist_to_conf < (minGapDist + 2))
-                            safeToTurn = false; break;
-                        end
+                if ~isempty(x2v) && isfield(x2v, 'turn_signal')
+                    if x2v.turn_signal == 1
+                        canTurn = true;
+                    elseif x2v.turn_signal == -1
+                        canTurn = false;
+                    else
+                        canTurn = ~strcmp(TrafficLight.NS, 'green');
                     end
+                else
+                    canTurn = ~strcmp(TrafficLight.NS, 'green');
                 end
+                % =========================================
 
-                allowOnSignal = ~strcmp(TrafficLight.NS,'green');
-                bothRight = leadRightAtWait(CarN,'N',turn_wait,wait_eps) && ...
-                    leadRightAtWait(CarS,'S',turn_wait,wait_eps);
-                leftBlocks = ~bothRight && leftTurnQueuePresent(CarS) && ...
-                    leftTurnHasPriority(CarS,'S',turn_start);
-
-                if ~leftBlocks && (safeToTurn || allowOnSignal)
+                if canTurn
                     spawnX = appear - out_eps;
                     if isSpawnClear(CarE, 'X', spawnX, 5.0)
                         car.Dir = 'E';
@@ -1217,25 +1214,23 @@ for KK = 1:KKmax
 
     % --- EAST direction position clamping ---
     for i = 1:length(CarE)
-        car = CarE(i);
-
-        % Find the car ahead (closest car with larger X)
-        for j = 1:length(CarE)
-            if j ~= i && CarE(j).X > car.X
+    car = CarE(i);
+    nearestGap = inf; leadCar = [];
+    for j = 1:length(CarE)
+        if j ~= i && CarE(j).X > car.X
+            g = CarE(j).X - car.X;
+            if g < nearestGap
+                nearestGap = g;
                 leadCar = CarE(j);
-                gap = leadCar.X - car.X;
-
-                % If gap is too small, clamp position
-                if gap < minSafeGap
-                    maxAllowedX = leadCar.X - minSafeGap;
-                    CarE(i).X = maxAllowedX;
-                    CarE(i).V = min(CarE(i).V, leadCar.V);  % Can't go faster than lead
-                    fprintf('POSITION CLAMPED CarE %d: behind Car %d, gap was %.2f\n', ...
-                        car.ID, leadCar.ID, gap);
-                end
             end
         end
     end
+    if ~isempty(leadCar) && nearestGap < minSafeGap
+        CarE(i).X = leadCar.X - minSafeGap;
+        CarE(i).V = min(CarE(i).V, leadCar.V);
+        fprintf('POSITION CLAMPED CarE %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
+    end
+end
 
     % --- WEST direction position clamping ---
     for i = 1:length(CarW)
@@ -1309,19 +1304,19 @@ for KK = 1:KKmax
         v2x_packet = CarN(i).SendingV2X(tsec);
         RSU1.ReceivingV2X(v2x_packet);
     end
-    
+
     % SOUTH cars send V2X to RSU
     for i = 1:length(CarS)
         v2x_packet = CarS(i).SendingV2X(tsec);
         RSU1.ReceivingV2X(v2x_packet);
     end
-    
+
     % EAST cars send V2X to RSU
     for i = 1:length(CarE)
         v2x_packet = CarE(i).SendingV2X(tsec);
         RSU1.ReceivingV2X(v2x_packet);
     end
-    
+
     % WEST cars send V2X to RSU
     for i = 1:length(CarW)
         v2x_packet = CarW(i).SendingV2X(tsec);
@@ -1332,14 +1327,14 @@ for KK = 1:KKmax
     % Process NORTH cars
     for i = 1:length(CarN)
         car = CarN(i);
-        
+
         % RSU computes response (right turn optimization if applicable)
         turn_signal = 0;
         recommended_V = NaN;
         recommended_Ac = NaN;
         priority = 0;
         message = '';
-        
+
         if car.TurnRight && ~car.TurnedRight
             [vpos, turn_signal] = RSU1.RightTurnOpt(car.ID, tsec);
             if ~isempty(vpos)
@@ -1347,22 +1342,22 @@ for KK = 1:KKmax
                 message = vpos.action;
             end
         end
-        
+
         % Send X2V packet from RSU to car
         x2v_packet = RSU1.SendingX2V(tsec, car.ID, turn_signal, recommended_V, recommended_Ac, priority, message);
         car.ReceivingX2V(x2v_packet);
     end
-    
+
     % Process SOUTH cars
     for i = 1:length(CarS)
         car = CarS(i);
-        
+
         turn_signal = 0;
         recommended_V = NaN;
         recommended_Ac = NaN;
         priority = 0;
         message = '';
-        
+
         if car.TurnRight && ~car.TurnedRight
             [vpos, turn_signal] = RSU1.RightTurnOpt(car.ID, tsec);
             if ~isempty(vpos)
@@ -1370,21 +1365,21 @@ for KK = 1:KKmax
                 message = vpos.action;
             end
         end
-        
+
         x2v_packet = RSU1.SendingX2V(tsec, car.ID, turn_signal, recommended_V, recommended_Ac, priority, message);
         car.ReceivingX2V(x2v_packet);
     end
-    
+
     % Process EAST cars
     for i = 1:length(CarE)
         car = CarE(i);
-        
+
         turn_signal = 0;
         recommended_V = NaN;
         recommended_Ac = NaN;
         priority = 0;
         message = '';
-        
+
         if car.TurnRight && ~car.TurnedRight
             [vpos, turn_signal] = RSU1.RightTurnOpt(car.ID, tsec);
             if ~isempty(vpos)
@@ -1392,21 +1387,21 @@ for KK = 1:KKmax
                 message = vpos.action;
             end
         end
-        
+
         x2v_packet = RSU1.SendingX2V(tsec, car.ID, turn_signal, recommended_V, recommended_Ac, priority, message);
         car.ReceivingX2V(x2v_packet);
     end
-    
+
     % Process WEST cars
     for i = 1:length(CarW)
         car = CarW(i);
-        
+
         turn_signal = 0;
         recommended_V = NaN;
         recommended_Ac = NaN;
         priority = 0;
         message = '';
-        
+
         if car.TurnRight && ~car.TurnedRight
             [vpos, turn_signal] = RSU1.RightTurnOpt(car.ID, tsec);
             if ~isempty(vpos)
@@ -1414,7 +1409,7 @@ for KK = 1:KKmax
                 message = vpos.action;
             end
         end
-        
+
         x2v_packet = RSU1.SendingX2V(tsec, car.ID, turn_signal, recommended_V, recommended_Ac, priority, message);
         car.ReceivingX2V(x2v_packet);
     end
@@ -1463,7 +1458,34 @@ for KK = 1:KKmax
             'X',CarW(i).X,'Y',CarW(i).Y,'V',CarW(i).V,'Ac',CarW(i).Ac);
     end
 
-    
+    %% Remove cars from RSU tracking when out of bounds
+    % NORTH - remove from RSU first, then from array
+    for i = length(CarN):-1:1
+        if abs(CarN(i).X) > 170 || abs(CarN(i).Y) > 170
+            RSU1.RemoveVehicle(CarN(i).ID, 'N');
+        end
+    end
+
+    % SOUTH - remove from RSU first
+    for i = length(CarS):-1:1
+        if abs(CarS(i).X) > 170 || abs(CarS(i).Y) > 170
+            RSU1.RemoveVehicle(CarS(i).ID, 'S');
+        end
+    end
+
+    % EAST - remove from RSU first
+    for i = length(CarE):-1:1
+        if abs(CarE(i).X) > 170 || abs(CarE(i).Y) > 170
+            RSU1.RemoveVehicle(CarE(i).ID, 'E');
+        end
+    end
+
+    % WEST - remove from RSU first
+    for i = length(CarW):-1:1
+        if abs(CarW(i).X) > 170 || abs(CarW(i).Y) > 170
+            RSU1.RemoveVehicle(CarW(i).ID, 'W');
+        end
+    end
 
     %% === Remove cars out of bounds ===
     % N
@@ -1476,6 +1498,25 @@ for KK = 1:KKmax
     CarW = CarW(abs([CarW.X]) <= 170 & abs([CarW.Y]) <= 170);
 end
 
+%% Print RSU
+fprintf('\n\n');
+RSU1.PrintSummary();
+
+% Print V2X statistics
+fprintf('\n=== V2X Communication Statistics ===\n');
+fprintf('Total V2X records stored at RSU:\n');
+dirs = {'N', 'S', 'E', 'W'};
+for d = 1:length(dirs)
+    dir = dirs{d};
+    fields = fieldnames(RSU1.str_v2x_data.(dir));
+    total_records = 0;
+    for f = 1:length(fields)
+        total_records = total_records + length(RSU1.str_v2x_data.(dir).(fields{f}).t);
+    end
+    fprintf('  Direction %s: %d records from %d vehicles\n', dir, total_records, length(fields));
+end
+fprintf('=====================================\n');
+
 
 %% === Plot ===
 plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_mpc_rsu.png');
@@ -1483,23 +1524,6 @@ plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneD
 
 
 %% === Helper Functions ===
-function t_turn = estimateTurnTime(car, turn_release, turn_wait, turn_waitX, turn_waitY)
-% estimateTurnTime - Estimate time needed to complete a right turn
-% using realistic average speed based on current and desired velocity
-
-% Geometric breakdown
-d_entry = sqrt((car.X - turn_waitX)^2 + (car.Y - turn_waitY)^2);  % from car to arc start
-flat = (turn_wait - turn_release) / 2;                 % flat segment before/after arc
-arc = sqrt(2 * flat^2);                                 % diagonal arc approximation
-total_dist = d_entry + 2 * flat + arc;
-
-% Realistic turn speed (avg of current and desired, capped)
-v_turn = min((car.V + car.Vd) / 2, 3);  % in m/s, capped at 3
-
-% Final estimated turn time
-t_turn = total_dist / max(v_turn, 0.1);  % avoid divide-by-zero
-end
-
 function [lamN, lamS, lamE, lamW] = getApproachRates(tsec, stages, lamNS_axis, lamEW_axis)
 if tsec < stages(2)
     k = 1;
@@ -1523,42 +1547,6 @@ if isempty(list), ok = true; return; end
 ok = all(abs([list.X] - x0) >= gap);
 end
 
-function hasLeftQueue = leftTurnQueuePresent(list)
-% True if ANY car on that approach plans to left-turn and hasn't turned yet.
-if isempty(list), hasLeftQueue = false; return; end
-hasLeftQueue = any(([list.TurnLeft] == 1) & (~[list.TurnedLeft]));
-end
-
-function waitLeft = leftTurnHasPriority(opList, oppDir, prioWin)
-% Yield only if a left-turner is near the stop line (within prioWin meters)
-waitLeft = false; if isempty(opList), return; end
-switch oppDir
-    case 'E', cand = ([opList.TurnLeft]==1)&(~[opList.TurnedLeft])&([opList.X] >= -prioWin);
-    case 'W', cand = ([opList.TurnLeft]==1)&(~[opList.TurnedLeft])&([opList.X] <=  prioWin);
-    case 'N', cand = ([opList.TurnLeft]==1)&(~[opList.TurnedLeft])&([opList.Y] >= -prioWin);
-    case 'S', cand = ([opList.TurnLeft]==1)&(~[opList.TurnedLeft])&([opList.Y] <=  prioWin);
-    otherwise, cand = false(size(opList));
-end
-waitLeft = any(cand);
-end
-
-function yes = leadRightAtWait(list, dir, turn_wait, eps)
-% True if the lead car on that approach is a right-turner at the wait point
-yes = false; if isempty(list), return; end
-switch dir
-    case 'E' % -X -> 0 (lead = max X)
-        [~,k] = max([list.X]); c = list(k); yes = c.TurnRight && ~c.TurnedRight && abs(c.X + turn_wait) <= eps;
-    case 'W' % +X -> 0 (lead = min X)
-        [~,k] = min([list.X]); c = list(k); yes = c.TurnRight && ~c.TurnedRight && abs(c.X - turn_wait) <= eps;
-    case 'N' % -Y -> 0 (lead = max Y)
-        [~,k] = max([list.Y]); c = list(k); yes = c.TurnRight && ~c.TurnedRight && abs(c.Y + turn_wait) <= eps;
-    case 'S' % +Y -> 0 (lead = min Y)
-        [~,k] = min([list.Y]); c = list(k); yes = c.TurnRight && ~c.TurnedRight && abs(c.Y - turn_wait) <= eps;
-    otherwise
-        yes = false;
-end
-end
-
 function phase = phaseName(t, gNS, yNS, ar1, gEW, yEW)
 % Returns a readable phase name based on t within the cycle
 if t < gNS
@@ -1569,34 +1557,33 @@ elseif t < gNS + yNS + ar1
     phase = 'ALL_RED_1';
 elseif t < gNS + yNS + ar1 + gEW
     phase = 'EW_GREEN';
-elseif t < gNS + yNS + ar1 + yEW
+elseif t < gNS + yNS + ar1 + gEW + yEW % still needs to check t < gNS + yNS + ar1 + yEW
     phase = 'EW_YELLOW';
 else
     phase = 'ALL_RED_2';
 end
 end
 
-
 function clear = isSpawnClear(carList, axis, spawnPos, safeGap)
-    % Check if spawn position is clear of other cars
-    % axis: 'X' or 'Y'
-    % spawnPos: the position where the car will spawn
-    % safeGap: minimum distance required (e.g., 5.0 meters)
-    
-    clear = true;
-    if isempty(carList)
-        return;
-    end
-    
-    if axis == 'X'
-        positions = [carList.X];
-    else
-        positions = [carList.Y];
-    end
-    
-    if any(abs(positions - spawnPos) < safeGap)
-        clear = false;
-    end
+% Check if spawn position is clear of other cars
+% axis: 'X' or 'Y'
+% spawnPos: the position where the car will spawn
+% safeGap: minimum distance required (e.g., 5.0 meters)
+
+clear = true;
+if isempty(carList)
+    return;
+end
+
+if axis == 'X'
+    positions = [carList.X];
+else
+    positions = [carList.Y];
+end
+
+if any(abs(positions - spawnPos) < safeGap)
+    clear = false;
+end
 end
 
 
