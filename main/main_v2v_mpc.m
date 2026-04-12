@@ -1126,88 +1126,80 @@ for KK = 1:KKmax
     % --- EAST direction position clamping ---
     for i = 1:length(CarE)
         car = CarE(i);
-
-        % Find the car ahead (closest car with larger X)
+        nearestGap = inf; leadCar = [];
         for j = 1:length(CarE)
             if j ~= i && CarE(j).X > car.X
-                leadCar = CarE(j);
-                gap = leadCar.X - car.X;
-
-                % If gap is too small, clamp position
-                if gap < minSafeGap
-                    maxAllowedX = leadCar.X - minSafeGap;
-                    CarE(i).X = maxAllowedX;
-                    CarE(i).V = min(CarE(i).V, leadCar.V);  % Can't go faster than lead
-                    fprintf('POSITION CLAMPED CarE %d: behind Car %d, gap was %.2f\n', ...
-                        car.ID, leadCar.ID, gap);
+                g = CarE(j).X - car.X;
+                if g < nearestGap
+                    nearestGap = g;
+                    leadCar = CarE(j);
                 end
             end
+        end
+        if ~isempty(leadCar) && nearestGap < minSafeGap
+            CarE(i).X = leadCar.X - minSafeGap;
+            CarE(i).V = min(CarE(i).V, leadCar.V);
+            fprintf('POSITION CLAMPED CarE %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
         end
     end
 
     % --- WEST direction position clamping ---
     for i = 1:length(CarW)
         car = CarW(i);
-
-        % Find the car ahead (closest car with smaller X for WEST)
+        nearestGap = inf; leadCar = [];
         for j = 1:length(CarW)
             if j ~= i && CarW(j).X < car.X
-                leadCar = CarW(j);
-                gap = car.X - leadCar.X;
-
-                % If gap is too small, clamp position
-                if gap < minSafeGap
-                    minAllowedX = leadCar.X + minSafeGap;
-                    CarW(i).X = minAllowedX;
-                    CarW(i).V = min(CarW(i).V, leadCar.V);
-                    fprintf('POSITION CLAMPED CarW %d: behind Car %d, gap was %.2f\n', ...
-                        car.ID, leadCar.ID, gap);
+                g = car.X - CarW(j).X;
+                if g < nearestGap
+                    nearestGap = g;
+                    leadCar = CarW(j);
                 end
             end
+        end
+        if ~isempty(leadCar) && nearestGap < minSafeGap
+            CarW(i).X = leadCar.X + minSafeGap;
+            CarW(i).V = min(CarW(i).V, leadCar.V);
+            fprintf('POSITION CLAMPED CarW %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
         end
     end
 
     % --- NORTH direction position clamping ---
     for i = 1:length(CarN)
         car = CarN(i);
-
-        % Find the car ahead (closest car with larger Y for NORTH)
+        nearestGap = inf; leadCar = [];
         for j = 1:length(CarN)
             if j ~= i && CarN(j).Y > car.Y
-                leadCar = CarN(j);
-                gap = leadCar.Y - car.Y;
-
-                % If gap is too small, clamp position
-                if gap < minSafeGap
-                    maxAllowedY = leadCar.Y - minSafeGap;
-                    CarN(i).Y = maxAllowedY;
-                    CarN(i).V = min(CarN(i).V, leadCar.V);
-                    fprintf('POSITION CLAMPED CarN %d: behind Car %d, gap was %.2f\n', ...
-                        car.ID, leadCar.ID, gap);
+                g = CarN(j).Y - car.Y;
+                if g < nearestGap
+                    nearestGap = g;
+                    leadCar = CarN(j);
                 end
             end
+        end
+        if ~isempty(leadCar) && nearestGap < minSafeGap
+            CarN(i).Y = leadCar.Y - minSafeGap;
+            CarN(i).V = min(CarN(i).V, leadCar.V);
+            fprintf('POSITION CLAMPED CarN %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
         end
     end
 
     % --- SOUTH direction position clamping ---
     for i = 1:length(CarS)
         car = CarS(i);
-
-        % Find the car ahead (closest car with smaller Y for SOUTH)
+        nearestGap = inf; leadCar = [];
         for j = 1:length(CarS)
             if j ~= i && CarS(j).Y < car.Y
-                leadCar = CarS(j);
-                gap = car.Y - leadCar.Y;
-
-                % If gap is too small, clamp position
-                if gap < minSafeGap
-                    minAllowedY = leadCar.Y + minSafeGap;
-                    CarS(i).Y = minAllowedY;
-                    CarS(i).V = min(CarS(i).V, leadCar.V);
-                    fprintf('POSITION CLAMPED CarS %d: behind Car %d, gap was %.2f\n', ...
-                        car.ID, leadCar.ID, gap);
+                g = car.Y - CarS(j).Y;
+                if g < nearestGap
+                    nearestGap = g;
+                    leadCar = CarS(j);
                 end
             end
+        end
+        if ~isempty(leadCar) && nearestGap < minSafeGap
+            CarS(i).Y = leadCar.Y + minSafeGap;
+            CarS(i).V = min(CarS(i).V, leadCar.V);
+            fprintf('POSITION CLAMPED CarS %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
         end
     end
 
