@@ -288,7 +288,9 @@ classdef Car<handle
                 H_qp = sparse(H_qp); Q_u = sparse(Q_u);
 
                 T_c = T; dt_c = dt;
-                U_warm = zeros(T,1);
+                if isempty(H.U_warm)
+                    H.U_warm = zeros(T,1);
+                end
             end
 
             % --- State-dependent parts (cheap each call) ---
@@ -343,13 +345,13 @@ classdef Car<handle
             % If quadprog missing, graceful degrade
             solverAvailable = exist('quadprog','file')==2;
             if solverAvailable
-                [U,~,exitflag] = quadprog(H_qp, f_qp, Aineq, bineq, [], [], lb, ub, U_warm, opts);
+                [U,~,exitflag] = quadprog(H_qp, f_qp, Aineq, bineq, [], [], lb, ub, H.U_warm, opts);
                 if DEBUG && P.ID == -1
                     fprintf('QP exitflag: %d (1=success, <=0=failed)\n', exitflag);
                 end
             else
                 warning('quadprog not available, using fallback controller');
-                U = U_warm; exitflag = 1; % fallback: keep last
+                U = H.U_warm; exitflag = 1; % fallback: keep last
             end
 
             if exitflag <= 0 || any(~isfinite(U))
@@ -373,7 +375,7 @@ classdef Car<handle
             end
 
             % Update warm-start (shift)
-            U_warm = [U(2:end); U(end)];
+            H.U_warm = [U(2:end); U(end)];
 
             % Apply first control
             Acel = U(1);
