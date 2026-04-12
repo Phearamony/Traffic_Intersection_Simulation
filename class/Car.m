@@ -288,9 +288,11 @@ classdef Car<handle
                 H_qp = sparse(H_qp); Q_u = sparse(Q_u);
 
                 T_c = T; dt_c = dt;
-                if isempty(H.U_warm)
+            end
+            
+            % Initialize U_warm for this car if first call
+            if isempty(H.U_warm)
                     H.U_warm = zeros(T,1);
-                end
             end
 
             % --- State-dependent parts (cheap each call) ---
