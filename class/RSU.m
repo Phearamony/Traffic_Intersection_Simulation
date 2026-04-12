@@ -190,7 +190,7 @@ classdef RSU<handle
             else, data = []; end
         end
 
-        %% ARRIVAL TIME ESTIMATION (MPC-BASED)
+        %% ARRIVAL TIME ESTIMATION (Forward IDM Simulation)
         function [sorted_ids, sorted_dists] = GetSortedVehiclesByDir(obj, dir)
             ids = obj.GetActiveVehicles(dir);
             n = length(ids);
@@ -347,7 +347,7 @@ classdef RSU<handle
             acc = max(min(acc,2),-7);
         end
 
-        function [ids, taus] = EstimateAllArrivalTimesMPC(obj, dir, trafficLight)
+        function [ids, taus] = EstimateAllArrivalTimesIDM(obj, dir, trafficLight)
             [sorted_ids, ~] = obj.GetSortedVehiclesByDir(dir);
             n = length(sorted_ids);
             if n==0, ids=[]; taus=[]; return; end
@@ -368,8 +368,8 @@ classdef RSU<handle
             if isempty(turningData)||~turningData.TurnRight
                 opt_p=0; coordinated_tau_E=[]; coordinated_tau_W=[]; min_cost=Inf; return;
             end
-            [ids_E, tau_bar_E] = obj.EstimateAllArrivalTimesMPC('E', trafficLight);
-            [ids_W, tau_bar_W] = obj.EstimateAllArrivalTimesMPC('W', trafficLight);
+            [ids_E, tau_bar_E] = obj.EstimateAllArrivalTimesIDM('E', trafficLight);
+            [ids_W, tau_bar_W] = obj.EstimateAllArrivalTimesIDM('W', trafficLight);
             M=length(ids_E); N=length(ids_W);
 
             fprintf('\n=== Right-Turn Opt (EW) ===\n');
@@ -415,8 +415,8 @@ classdef RSU<handle
         function [opt_p, coordinated_tau_S, coordinated_tau_N, min_cost] = OptimizeRightTurn_NS(obj, turningCarID, trafficLight)
             turningData = obj.GetVehicleData(turningCarID);
             if isempty(turningData)||~turningData.TurnRight, opt_p=0; coordinated_tau_S=[]; coordinated_tau_N=[]; min_cost=Inf; return; end
-            [ids_S, tau_bar_S] = obj.EstimateAllArrivalTimesMPC('S', trafficLight);
-            [ids_N, tau_bar_N] = obj.EstimateAllArrivalTimesMPC('N', trafficLight);
+            [ids_S, tau_bar_S] = obj.EstimateAllArrivalTimesIDM('S', trafficLight);
+            [ids_N, tau_bar_N] = obj.EstimateAllArrivalTimesIDM('N', trafficLight);
             M=length(ids_S); N=length(ids_N);
             q = find(ids_N == turningCarID);
             if isempty(q), opt_p=0; coordinated_tau_S=tau_bar_S; coordinated_tau_N=tau_bar_N; min_cost=Inf; return; end
@@ -451,8 +451,8 @@ classdef RSU<handle
         function [opt_p, coordinated_tau_W, coordinated_tau_E, min_cost] = OptimizeRightTurn_EW_Reverse(obj, turningCarID, trafficLight)
             turningData = obj.GetVehicleData(turningCarID);
             if isempty(turningData)||~turningData.TurnRight, opt_p=0; coordinated_tau_W=[]; coordinated_tau_E=[]; min_cost=Inf; return; end
-            [ids_W, tau_bar_W] = obj.EstimateAllArrivalTimesMPC('W', trafficLight);
-            [ids_E, tau_bar_E] = obj.EstimateAllArrivalTimesMPC('E', trafficLight);
+            [ids_W, tau_bar_W] = obj.EstimateAllArrivalTimesIDM('W', trafficLight);
+            [ids_E, tau_bar_E] = obj.EstimateAllArrivalTimesIDM('E', trafficLight);
             M=length(ids_W); N=length(ids_E);
             q = find(ids_E == turningCarID);
             if isempty(q), opt_p=0; coordinated_tau_W=tau_bar_W; coordinated_tau_E=tau_bar_E; min_cost=Inf; return; end
@@ -480,8 +480,8 @@ classdef RSU<handle
         function [opt_p, coordinated_tau_N, coordinated_tau_S, min_cost] = OptimizeRightTurn_NS_Reverse(obj, turningCarID, trafficLight)
             turningData = obj.GetVehicleData(turningCarID);
             if isempty(turningData)||~turningData.TurnRight, opt_p=0; coordinated_tau_N=[]; coordinated_tau_S=[]; min_cost=Inf; return; end
-            [ids_N, tau_bar_N] = obj.EstimateAllArrivalTimesMPC('N', trafficLight);
-            [ids_S, tau_bar_S] = obj.EstimateAllArrivalTimesMPC('S', trafficLight);
+            [ids_N, tau_bar_N] = obj.EstimateAllArrivalTimesIDM('N', trafficLight);
+            [ids_S, tau_bar_S] = obj.EstimateAllArrivalTimesIDM('S', trafficLight);
             M=length(ids_N); N=length(ids_S);
             q = find(ids_S == turningCarID);
             if isempty(q), opt_p=0; coordinated_tau_N=tau_bar_N; coordinated_tau_S=tau_bar_S; min_cost=Inf; return; end
@@ -884,7 +884,7 @@ classdef RSU<handle
             dirs = {'N','S','E','W'};
             for d=1:4
                 dir=dirs{d};
-                [ids, taus] = obj.EstimateAllArrivalTimesMPC(dir, trafficLight);
+                [ids, taus] = obj.EstimateAllArrivalTimesIDM(dir, trafficLight);
                 if ~isempty(ids)
                     fprintf('%s: ', dir);
                     for i=1:length(ids)
