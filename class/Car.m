@@ -45,11 +45,15 @@ classdef Car<handle
             obj.Vd=21+6*rand+2;
             obj.X=X;
 
-            if rand < 0.25 && obj.TurnRight == 0  % 25% chance to turn right
+            % In Japanese left-hand traffic, left turns are the "free" maneuver
+            % (no cross-traffic conflict) — assigned 25% probability.
+            % Right turns cross oncoming traffic and are the coordination target
+            % of the RSU — assigned 15% probability.
+            if rand < 0.25 && obj.TurnRight == 0  % 25% chance to turn LEFT
                 obj.TurnLeft = 1;
             end
 
-            if rand < 0.15 && obj.TurnLeft == 0  % 15% chance to turn left
+            if rand < 0.15 && obj.TurnLeft == 0  % 15% chance to turn RIGHT
                 obj.TurnRight = 1;
             end
 
@@ -200,8 +204,12 @@ classdef Car<handle
 
             % --- Globals / params (kept same semantics as your code) ---
             global dt
-            Umn = -7; Umx = 2;          % accel bounds
-            Vmn = 0;  Vmx = max(H.Vd, H.V) + 5;         % speed bounds
+            Umn = -7; Umx = 2;          % accel bounds [m/s²]
+            Vmn = 0;  Vmx = 30;         % speed bounds [m/s]
+            % Vmx is a fixed physical speed ceiling (≈108 km/h), NOT dependent
+            % on current speed. The previous expression max(H.Vd, H.V)+5 caused
+            % the constraint to shift every call based on instantaneous velocity,
+            % giving different QP problems to cars in otherwise identical states.
             T   = 8;                    % horizon (should be > 4 for it to stop in time)
             wv  = 0.15; wu = 9.0;       % cost weights (keep same)
             S0  = 1.0;                  % desired spacing to lead
@@ -344,39 +352,56 @@ classdef Car<handle
                 'OptimalityTolerance',1e-6, ...
                 'ConstraintTolerance',1e-6);
 
+            % Pre-initialize U to the warm-start as a safe default.
+            % This ensures U is always a T-length vector, even if quadprog
+            % returns an empty solution (which happens on some failure modes).
+            % Without this, any(~isfinite([])) = false in MATLAB, so the
+            % fallback block would silently not trigger, and we'd crash
+            % trying to index an empty U.
+            U = H.U_warm;
+            exitflag = -1;
+
             % If quadprog missing, graceful degrade
             solverAvailable = exist('quadprog','file')==2;
             if solverAvailable
-                [U,~,exitflag] = quadprog(H_qp, f_qp, Aineq, bineq, [], [], lb, ub, H.U_warm, opts);
+                [U_sol, ~, exitflag] = quadprog(H_qp, f_qp, Aineq, bineq, [], [], lb, ub, H.U_warm, opts);
+                % Only accept the solution if it is valid and complete
+                if exitflag > 0 && ~isempty(U_sol) && all(isfinite(U_sol))
+                    U = U_sol;
+                end
                 if DEBUG && P.ID == -1
                     fprintf('QP exitflag: %d (1=success, <=0=failed)\n', exitflag);
                 end
             else
                 warning('quadprog not available, using fallback controller');
-                U = H.U_warm; exitflag = 1; % fallback: keep last
+                U = H.U_warm; exitflag = 1;
             end
 
-            if exitflag <= 0 || any(~isfinite(U))
-                % Very occasional infeasibility: soft fallback to small accel toward Vd
-                % QP FAILED - Determine safe fallback
+            if exitflag <= 0 || isempty(U) || any(~isfinite(U))
+                % QP FAILED - build a full T-length fallback vector so that
+                % the warm-start shift below always produces a T-length result.
+                % Previously only U(1) was set, leaving U(2:end) from a
+                % failed/empty solve — this corrupted warm-start on next call.
                 current_gap = sL0 - s0;
                 stopping_dist = v0^2 / (2 * abs(Umn) + 0.01);
 
-                % If we're anywhere near needing to stop, BRAKE
                 if current_gap < stopping_dist * 1.5 + S0 + 20
-                    U(1) = Umn;  % Maximum braking
+                    u_fallback = Umn;  % Maximum braking
                 else
-                    % Safe distance - gentle speed control
-                    U(1) = max(min(0.3*(H.Vd - v0), Umx), Umn);
+                    u_fallback = max(min(0.3*(H.Vd - v0), Umx), Umn);
                 end
 
+                % Fill entire horizon with fallback value
+                U = u_fallback * ones(T, 1);
+
                 if DEBUG && P.ID == -1
-                    fprintf('QP FAILED! gap=%.1f, stop_dist=%.1f, fallback U(1)=%.2f\n', ...
-                        current_gap, stopping_dist, U(1));
+                    fprintf('QP FAILED! gap=%.1f, stop_dist=%.1f, fallback U=%.2f\n', ...
+                        current_gap, stopping_dist, u_fallback);
                 end
             end
 
-            % Update warm-start (shift)
+            % Update warm-start (shift by one step, repeat last)
+            % U is guaranteed to be T-length here, so this is always safe.
             H.U_warm = [U(2:end); U(end)];
 
             % Apply first control
@@ -643,4 +668,3 @@ classdef Car<handle
         end
     end
 end
-

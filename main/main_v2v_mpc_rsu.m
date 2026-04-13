@@ -182,23 +182,39 @@ for KK = 1:KKmax
     EW_green_start = strcmp(TrafficLight.EW, 'green') && ~strcmp(prev_TrafficLight.EW, 'green');
     NS_green_start = strcmp(TrafficLight.NS, 'green') && ~strcmp(prev_TrafficLight.NS, 'green');
 
-    % Run optimization at start of each green phase
+    % Run optimization at GREEN START (always) and also every timestep
+    % during green to catch new right-turners that arrive mid-phase.
+    % RunGreenPhaseOptimization now returns true only when it actually
+    % re-ran (turner changed), so we only print arrival times then.
     if EW_green_start
         fprintf('\n========================================\n');
         fprintf('[t=%.1f] EW GREEN START - Running RSU optimization...\n', tsec);
         fprintf('========================================\n');
+        RSU1.opt_results.EW = [];   % Force fresh optimization at phase start
         RSU1.RunGreenPhaseOptimization(tsec, 'EW', TrafficLight);
         RSU1.PrintArrivalTimes(TrafficLight);
         opt_run_EW = true;
+    elseif strcmp(TrafficLight.EW, 'green')
+        % Mid-phase: re-run only if a new turner arrived (cheap check)
+        if RSU1.RunGreenPhaseOptimization(tsec, 'EW', TrafficLight)
+            fprintf('[t=%.1f] EW re-optimized for new turner\n', tsec);
+            RSU1.PrintArrivalTimes(TrafficLight);
+        end
     end
 
     if NS_green_start
         fprintf('\n========================================\n');
         fprintf('[t=%.1f] NS GREEN START - Running RSU optimization...\n', tsec);
         fprintf('========================================\n');
+        RSU1.opt_results.NS = [];   % Force fresh optimization at phase start
         RSU1.RunGreenPhaseOptimization(tsec, 'NS', TrafficLight);
         RSU1.PrintArrivalTimes(TrafficLight);
         opt_run_NS = true;
+    elseif strcmp(TrafficLight.NS, 'green')
+        if RSU1.RunGreenPhaseOptimization(tsec, 'NS', TrafficLight)
+            fprintf('[t=%.1f] NS re-optimized for new turner\n', tsec);
+            RSU1.PrintArrivalTimes(TrafficLight);
+        end
     end
 
     % Reset optimization flag when phase ends
@@ -311,6 +327,31 @@ for KK = 1:KKmax
     %% === Compute Acceleration and movement with Traffic Light Algorithm ===
 
     % NORTH → SOUTH
+    % Pre-build stop-line dummy cars for each direction (Fix 9).
+    % These are reused each timestep instead of being re-instantiated
+    % inside the per-car loop, avoiding repeated rand() calls and
+    % struct initialization that the Car constructor performs.
+    % Only the position fields are updated inside the loop.
+    dummyN = Car(-1, 0, 0); dummyN.Dir = 'N'; dummyN.V = 0;
+    dummyS = Car(-1, 0, 0); dummyS.Dir = 'S'; dummyS.V = 0;
+    dummyE = Car(-1, 0, 0); dummyE.Dir = 'E'; dummyE.V = 0;
+    dummyW = Car(-1, 0, 0); dummyW.Dir = 'W'; dummyW.V = 0;
+
+    % Virtual free-driving lead: placed 200 m ahead at desired speed.
+    % Using MPC with a far-away lead (Fix 4) keeps the free-driving
+    % acceleration produced by the same QP as car-following, rather than
+    % a separate proportional gain (0.5*(Vd-V)) that produces a different
+    % profile and inflates inter-configuration variance.
+    freeDriveLead = Car(-2, 0, 0); freeDriveLead.V = 0; % position set below
+
+    % Lead-car cache for each direction (Fix 8).
+    % The MPC blocks below populate these; the collision prevention block
+    % reuses them instead of running the same O(n²) search a second time.
+    leadCarE = cell(1, length(CarE));
+    leadCarW = cell(1, length(CarW));
+    leadCarN = cell(1, length(CarN));
+    leadCarS = cell(1, length(CarS));
+
     for i = 1:length(CarN)
         car = CarN(i);
         isRedOrYellow = strcmp(TrafficLight.NS, 'red') || strcmp(TrafficLight.NS, 'yellow');
@@ -329,25 +370,26 @@ for KK = 1:KKmax
             end
         end
 
+        % Cache for collision prevention (Fix 8)
+        leadCarN{i} = leadCar;
+
         if isRedOrYellow && isBeforeStopLine
-            % Red/Yellow light and car hasn't crossed yet
+            % Red/Yellow: stop at the line (or follow queue)
             if ~isempty(leadCar) && leadCar.Y < -stop_line + car.R0
-                % Follow the car ahead (which is also waiting)
                 car.Ac = car.MPC(car, leadCar);
             else
-                % No car ahead (or car ahead crossed) - stop at line
-                dummy = Car(-1, 0, 0);
-                dummy.Y = -stop_line + car.R0;
-                dummy.V = 0;
-                dummy.Dir = 'N';
-                car.Ac = car.MPC(car, dummy);
+                dummyN.Y = -stop_line + car.R0;
+                car.Ac = car.MPC(car, dummyN);
             end
         else
-            % Green light OR already past stop line
+            % Green or past stop line: follow lead or free-drive via MPC
             if ~isempty(leadCar)
                 car.Ac = car.MPC(car, leadCar);
             else
-                car.Ac = 0.5 * (car.Vd - car.V);
+                freeDriveLead.Dir = 'N';
+                freeDriveLead.Y   = car.Y + 200;
+                freeDriveLead.V   = car.Vd;
+                car.Ac = car.MPC(car, freeDriveLead);
             end
         end
         CarN(i) = car;
@@ -374,26 +416,23 @@ for KK = 1:KKmax
         end
 
         if isRedOrYellow && isBeforeStopLine
-            % Red/Yellow light and car hasn't crossed yet
             if ~isempty(leadCar) && leadCar.Y > stop_line - car.R0
-                % Follow the car ahead (which is also waiting)
                 car.Ac = car.MPC(car, leadCar);
             else
-                % No car ahead (or car ahead crossed) - stop at line
-                dummy = Car(-1, 0, 0);
-                dummy.Y = stop_line - car.R0;
-                dummy.V = 0;
-                dummy.Dir = 'S';
-                car.Ac = car.MPC(car, dummy);
+                dummyS.Y = stop_line - car.R0;
+                car.Ac = car.MPC(car, dummyS);
             end
         else
-            % Green light OR already past stop line
             if ~isempty(leadCar)
                 car.Ac = car.MPC(car, leadCar);
             else
-                car.Ac = 0.5 * (car.Vd - car.V);
+                freeDriveLead.Dir = 'S';
+                freeDriveLead.Y   = car.Y - 200;
+                freeDriveLead.V   = car.Vd;
+                car.Ac = car.MPC(car, freeDriveLead);
             end
         end
+        leadCarS{i} = leadCar;   % cache for collision prevention (Fix 8)
         CarS(i) = car;
     end
 
@@ -418,27 +457,24 @@ for KK = 1:KKmax
         end
 
         if isRedOrYellow && isBeforeStopLine
-            % Red/Yellow light and car hasn't crossed yet
             if ~isempty(leadCar) && leadCar.X < -stop_line + car.R0
-                % Follow the car ahead (which is also waiting)
                 car.Ac = car.MPC(car, leadCar);
             else
-                % No car ahead (or car ahead crossed) - stop at line
-                dummy = Car(-1, 0, 0);
-                dummy.X = -stop_line + car.R0;
-                dummy.V = 0;
-                dummy.Dir = 'E';
-                car.Ac = car.MPC(car, dummy);
+                dummyE.X = -stop_line + car.R0;
+                car.Ac = car.MPC(car, dummyE);
             end
         else
-            % Green light OR already past stop line
             if ~isempty(leadCar)
                 car.Ac = car.MPC(car, leadCar);
             else
-                car.Ac = 0.5 * (car.Vd - car.V);
+                freeDriveLead.Dir = 'E';
+                freeDriveLead.X   = car.X + 200;
+                freeDriveLead.V   = car.Vd;
+                car.Ac = car.MPC(car, freeDriveLead);
             end
         end
 
+        leadCarE{i} = leadCar;   % cache for collision prevention (Fix 8)
         CarE(i) = car;
     end
 
@@ -462,46 +498,34 @@ for KK = 1:KKmax
         end
 
         if isRedOrYellow && isBeforeStopLine
-            % Red/Yellow light and car hasn't crossed yet
             if ~isempty(leadCar) && leadCar.X > stop_line - car.R0
-                % Follow the car ahead (which is also waiting)
                 car.Ac = car.MPC(car, leadCar);
             else
-                % No car ahead (or car ahead crossed) - stop at line
-                dummy = Car(-1, 0, 0);
-                dummy.X = stop_line - car.R0;
-                dummy.V = 0;
-                dummy.Dir = 'W';
-                car.Ac = car.MPC(car, dummy);
+                dummyW.X = stop_line - car.R0;
+                car.Ac = car.MPC(car, dummyW);
             end
         else
-            % Green light OR already past stop line
             if ~isempty(leadCar)
                 car.Ac = car.MPC(car, leadCar);
             else
-                car.Ac = 0.5 * (car.Vd - car.V);
+                freeDriveLead.Dir = 'W';
+                freeDriveLead.X   = car.X - 200;
+                freeDriveLead.V   = car.Vd;
+                car.Ac = car.MPC(car, freeDriveLead);
             end
         end
+        leadCarW{i} = leadCar;   % cache for collision prevention (Fix 8)
         CarW(i) = car;
     end
 
     %% === HARD COLLISION PREVENTION ===
+    % Lead cars are reused from the caches populated in the MPC blocks above
+    % (Fix 8) — no duplicate O(n²) search needed here.
+
     % --- East direction collision prevention ---
     for i = 1:length(CarE)
         car = CarE(i);
-
-        % Find the actual car ahead (closest car with larger X)
-        leadCar = [];
-        minDist = inf;
-        for j = 1:length(CarE)
-            if j ~= i && CarE(j).X > car.X
-                dist = CarE(j).X - car.X;
-                if dist < minDist
-                    minDist = dist;
-                    leadCar = CarE(j);
-                end
-            end
-        end
+        leadCar = leadCarE{i};  % reuse cached result
 
         if ~isempty(leadCar)
             gap = leadCar.X - car.X;
@@ -1579,5 +1603,3 @@ if any(abs(positions - spawnPos) < safeGap)
     clear = false;
 end
 end
-
-
