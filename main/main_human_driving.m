@@ -987,7 +987,7 @@ end
 plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_human.png');
 plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_human.png');
 
-%plot_EW_accelerations(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_human_ac.png');
+plot_EW_accelerations(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_human_ac.png');
 
 
 %% === Helper Functions ===

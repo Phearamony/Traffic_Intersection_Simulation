@@ -87,8 +87,8 @@ load(sched_path, 'sched');
 fprintf('Loaded traffic schedule (%d timesteps, dt=%.1fs)\n', sched.KKmax, sched.dt);
 
 % Activate Each Lane
-CARN = false;
-CARS = false;
+CARN = true;
+CARS = true;
 CARE = true;
 CARW = true;
 
