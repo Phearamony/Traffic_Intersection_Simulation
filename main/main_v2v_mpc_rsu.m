@@ -1,4 +1,8 @@
 %% 4-Way Intersection Simulation
+% IMPORTANT: 'clear classes' forces MATLAB to reload handle classes (Car, RSU)
+% from disk. Without this, MATLAB uses the in-memory compiled version and will
+% NOT pick up any edits made to Car.m or RSU.m since the last run.
+clear classes %#ok<CLCLS>
 close all; clear; clc;
 
 % addpath
@@ -1252,7 +1256,7 @@ for KK = 1:KKmax
     if ~isempty(leadCar) && nearestGap < minSafeGap
         CarE(i).X = leadCar.X - minSafeGap;
         CarE(i).V = min(CarE(i).V, leadCar.V);
-        fprintf('POSITION CLAMPED CarE %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
+        % fprintf('POSITION CLAMPED CarE %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
     end
 end
 
@@ -1272,7 +1276,7 @@ end
     if ~isempty(leadCar) && nearestGap < minSafeGap
         CarW(i).X = leadCar.X + minSafeGap;
         CarW(i).V = min(CarW(i).V, leadCar.V);
-        fprintf('POSITION CLAMPED CarW %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
+        % fprintf('POSITION CLAMPED CarW %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
     end
 end
 
@@ -1292,7 +1296,7 @@ end
     if ~isempty(leadCar) && nearestGap < minSafeGap
         CarN(i).Y = leadCar.Y - minSafeGap;
         CarN(i).V = min(CarN(i).V, leadCar.V);
-        fprintf('POSITION CLAMPED CarN %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
+        % fprintf('POSITION CLAMPED CarN %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
     end
 end
 
@@ -1312,7 +1316,7 @@ end
     if ~isempty(leadCar) && nearestGap < minSafeGap
         CarS(i).Y = leadCar.Y + minSafeGap;
         CarS(i).V = min(CarS(i).V, leadCar.V);
-        fprintf('POSITION CLAMPED CarS %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
+        % fprintf('POSITION CLAMPED CarS %d: behind Car %d, gap was %.2f\n', car.ID, leadCar.ID, nearestGap);
     end
 end
 
