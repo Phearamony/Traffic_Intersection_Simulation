@@ -67,8 +67,72 @@ spawn_gap_min = 8;            % meters between entry and nearest car
 DemandStages = [0,120,300];   % seconds
 
 % Axis flow rates (veh/s) — split equally to the two approaches on that axis
+% 0.30 NS + 0.25 EW at light ≈ 0.55 veh/s total ≈ 1980 veh/h across 4 approaches
+% Peak stage (0.60+0.55 = 1.15 veh/s ≈ 4140 veh/h) gives congested conditions
 lambdaNS_axis = [0.30, 0.45, 0.60];  % NS total
 lambdaEW_axis = [0.25, 0.40, 0.55];  % EW total
+
+%% === Pre-generate traffic arrival schedule ===
+% All random decisions (Poisson arrival + vehicle properties) are drawn
+% HERE, once, and saved to traffic_schedule.mat.
+% Every other scenario main loads this file so the six configurations all
+% see IDENTICAL incoming traffic — making the comparison fair.
+%
+% What is saved per timestep KK, per direction {N,S,E,W}:
+%   *_intent    — did the Poisson process say a car should arrive?
+%   *_TurnLeft  — pre-drawn TurnLeft flag (25% probability)
+%   *_TurnRight — pre-drawn TurnRight flag (15% probability, mutually exclusive)
+%   *_Vd        — desired speed drawn from same distribution as Car constructor
+%   *_Th        — time headway drawn from same distribution as Car constructor
+%
+% The physical canSpawnX/Y spacing check is intentionally NOT saved — it is
+% scenario-specific (queue lengths differ) and is re-evaluated at runtime.
+
+fprintf('Generating traffic schedule (KKmax=%d, dt=%.1fs)...\n', KKmax, dt);
+
+sched = struct();
+sched.KKmax         = KKmax;
+sched.dt            = dt;
+sched.DemandStages  = DemandStages;
+sched.lambdaNS_axis = lambdaNS_axis;
+sched.lambdaEW_axis = lambdaEW_axis;
+
+dirs_list = {'N','S','E','W'};
+for di = 1:4
+    d = dirs_list{di};
+    sched.([d '_intent'])    = false(1, KKmax);
+    sched.([d '_TurnLeft'])  = false(1, KKmax);
+    sched.([d '_TurnRight']) = false(1, KKmax);
+    sched.([d '_Vd'])        = zeros(1, KKmax);
+    sched.([d '_Th'])        = zeros(1, KKmax);
+end
+
+for kk = 1:KKmax
+    tsec_kk = kk * dt;
+    [lamN_k, lamS_k, lamE_k, lamW_k] = getApproachRates(tsec_kk, DemandStages, lambdaNS_axis, lambdaEW_axis);
+    lams_k = [lamN_k, lamS_k, lamE_k, lamW_k];
+    for di = 1:4
+        d = dirs_list{di};
+        p = 1 - exp(-lams_k(di) * dt);          % Poisson step probability
+        sched.([d '_intent'])(kk)    = rand < p;  % arrival intention
+        % Vehicle properties — same distributions as Car constructor
+        tl = rand < 0.25;                         % 25% left-turn
+        tr = false;
+        if ~tl, tr = rand < 0.15; end             % 15% right-turn (exclusive)
+        sched.([d '_TurnLeft'])(kk)  = tl;
+        sched.([d '_TurnRight'])(kk) = tr;
+        sched.([d '_Vd'])(kk)        = 21 + 6*rand + 2;   % desired speed [m/s]
+        sched.([d '_Th'])(kk)        = 1.2 + 1.2*rand;    % time headway [s]
+    end
+end
+
+% Save alongside the main files so all scenarios can load it
+sched_path = fullfile(fileparts(mfilename('fullpath')), '..', 'simplot', 'traffic_schedule.mat');
+save(sched_path, 'sched');
+fprintf('Traffic schedule saved → %s\n', sched_path);
+fprintf('  Total arrival intentions: N=%d  S=%d  E=%d  W=%d\n', ...
+    sum(sched.N_intent), sum(sched.S_intent), ...
+    sum(sched.E_intent), sum(sched.W_intent));
 
 %% === Initialize new cars===
 % SOUTH → NORTH (drive left, so +X)
@@ -130,38 +194,45 @@ for KK = 1:KKmax
         SimPlotIntersection;
     end
 
-    %% === Spawn new cars (Poisson, ramps from light->heavy) ===
-    tsec = KK * dt;
-
-    % Get per-approach rates (veh/s)
-    [lamN, lamS, lamE, lamW] = getApproachRates(tsec, DemandStages, lambdaNS_axis, lambdaEW_axis);
-    spawnProb = @(lam) 1 - exp(-lam * dt);   % Poisson step prob
+    %% === Spawn new cars (from pre-generated schedule) ===
+    % Arrival intentions come from sched (identical across all scenarios).
+    % canSpawnX/Y enforces physical spacing — this is scenario-specific and correct.
+    % Car properties (Vd, Th, TurnLeft, TurnRight) are overridden from sched
+    % so vehicle characteristics are also identical across scenarios.
 
     % NORTH (spawn at Y=-150, moving +Y)
-    if rand < spawnProb(lamN) && canSpawnY(CarN, -150, spawn_gap_min)
+    if sched.N_intent(KK) && canSpawnY(CarN, -150, spawn_gap_min)
         carN = Car(CarIDN, -1.5, -150); CarIDN = CarIDN + 1;
         carN.Dir = 'N';
+        carN.TurnLeft = sched.N_TurnLeft(KK);  carN.TurnRight = sched.N_TurnRight(KK);
+        carN.Vd = sched.N_Vd(KK);              carN.Th = sched.N_Th(KK);
         CarN(end+1) = carN;
     end
 
     % SOUTH (spawn at Y=+150, moving -Y)
-    if rand < spawnProb(lamS) && canSpawnY(CarS, 150, spawn_gap_min)
+    if sched.S_intent(KK) && canSpawnY(CarS, 150, spawn_gap_min)
         carS = Car(CarIDS, 1.5, 150); CarIDS = CarIDS + 1;
         carS.Dir = 'S';
+        carS.TurnLeft = sched.S_TurnLeft(KK);  carS.TurnRight = sched.S_TurnRight(KK);
+        carS.Vd = sched.S_Vd(KK);              carS.Th = sched.S_Th(KK);
         CarS(end+1) = carS;
     end
 
     % EAST (spawn at X=-150, moving +X)
-    if rand < spawnProb(lamE) && canSpawnX(CarE, -150, spawn_gap_min)
+    if sched.E_intent(KK) && canSpawnX(CarE, -150, spawn_gap_min)
         carE = Car(CarIDE, -150, 1.5); CarIDE = CarIDE + 1;
         carE.Dir = 'E';
+        carE.TurnLeft = sched.E_TurnLeft(KK);  carE.TurnRight = sched.E_TurnRight(KK);
+        carE.Vd = sched.E_Vd(KK);              carE.Th = sched.E_Th(KK);
         CarE(end+1) = carE;
     end
 
     % WEST (spawn at X=+150, moving -X)
-    if rand < spawnProb(lamW) && canSpawnX(CarW, 150, spawn_gap_min)
+    if sched.W_intent(KK) && canSpawnX(CarW, 150, spawn_gap_min)
         carW = Car(CarIDW, 150, -1.5); CarIDW = CarIDW + 1;
         carW.Dir = 'W';
+        carW.TurnLeft = sched.W_TurnLeft(KK);  carW.TurnRight = sched.W_TurnRight(KK);
+        carW.Vd = sched.W_Vd(KK);              carW.Th = sched.W_Th(KK);
         CarW(end+1) = carW;
     end
 

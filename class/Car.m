@@ -41,21 +41,14 @@ classdef Car<handle
             global Vd;
             obj.ID=ID;
             obj.Y=Y;
-            obj.Th=1.2+1.2*rand;
-            obj.Vd=21+6*rand+2;
             obj.X=X;
-
-            % In Japanese left-hand traffic, left turns are the "free" maneuver
-            % (no cross-traffic conflict) — assigned 25% probability.
-            % Right turns cross oncoming traffic and are the coordination target
-            % of the RSU — assigned 15% probability.
-            if rand < 0.25 && obj.TurnRight == 0  % 25% chance to turn LEFT
-                obj.TurnLeft = 1;
-            end
-
-            if rand < 0.15 && obj.TurnLeft == 0  % 15% chance to turn RIGHT
-                obj.TurnRight = 1;
-            end
+            % Vd, Th, TurnLeft, TurnRight are left at their property defaults
+            % (Vd=25, Th=1.3, TurnLeft=0, TurnRight=0).
+            % All spawned cars receive these values from the shared traffic
+            % schedule (sched.*) after construction, ensuring identical vehicle
+            % properties across every scenario configuration.
+            % Dummy cars (ID=-1,-2) used for stop-line following also benefit
+            % from deterministic defaults rather than random draws.
 
             % Initialize storage structures
             obj.str_v2x_data = Car.initCarHistory();

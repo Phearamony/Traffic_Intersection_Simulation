@@ -18,19 +18,24 @@ classdef Car<handle
         TurnRight = 0;
         TurnedRight = 0;
         Turn_signal = 0;
-        Recieved_data = struct();
 
-        % V2X_data
+        % V2X_data (data this car sends to RSU)
         v2x_data = struct();
-        str_v2x_data = struct();
-        str_v2x_data_short = struct();
+        str_v2x_data = struct();         % permanent storage of sent data
+        str_v2x_data_short = struct();   % temp storage of sent data
 
-        % X2V_data
+        % X2V_data (data this car receives from RSU)
         x2v_data = struct();
-        str_x2v_data = struct();
-        str_x2v_data_short = struct();
+        str_x2v_data = struct();         % permanent storage of received data
+        str_x2v_data_short = struct();   % temp storage of received data
 
+        % Short storage config
+        SHORT_K = 20;  % keep last K entries in short storage
+
+        % warm-start vector for mpc
+        U_warm = []; 
     end
+
     methods
         function obj=Car(ID, X, Y)
             global Vd;
@@ -40,13 +45,23 @@ classdef Car<handle
             obj.Vd=21+6*rand+2;
             obj.X=X;
 
-            if rand < 0.25 && obj.TurnRight == 0  % 25% chance to turn right
+            % In Japanese left-hand traffic, left turns are the "free" maneuver
+            % (no cross-traffic conflict) — assigned 25% probability.
+            % Right turns cross oncoming traffic and are the coordination target
+            % of the RSU — assigned 15% probability.
+            if rand < 0.25 && obj.TurnRight == 0  % 25% chance to turn LEFT
                 obj.TurnLeft = 1;
             end
 
-            if rand < 0.15 && obj.TurnLeft == 0  % 25% chance to turn left
+            if rand < 0.15 && obj.TurnLeft == 0  % 15% chance to turn RIGHT
                 obj.TurnRight = 1;
             end
+
+            % Initialize storage structures
+            obj.str_v2x_data = Car.initCarHistory();
+            obj.str_v2x_data_short = Car.initCarHistory();
+            obj.str_x2v_data = Car.initX2VHistory();
+            obj.str_x2v_data_short = Car.initX2VHistory();
 
         end
 
@@ -189,14 +204,18 @@ classdef Car<handle
 
             % --- Globals / params (kept same semantics as your code) ---
             global dt
-            Umn = -7; Umx = 2;          % accel bounds
-            Vmn = 0;  Vmx = max(H.Vd, H.V) + 5;         % speed bounds
+            Umn = -7; Umx = 2;          % accel bounds [m/s²]
+            Vmn = 0;  Vmx = 30;         % speed bounds [m/s]
+            % Vmx is a fixed physical speed ceiling (≈108 km/h), NOT dependent
+            % on current speed. The previous expression max(H.Vd, H.V)+5 caused
+            % the constraint to shift every call based on instantaneous velocity,
+            % giving different QP problems to cars in otherwise identical states.
             T   = 8;                    % horizon (should be > 4 for it to stop in time)
             wv  = 0.15; wu = 9.0;       % cost weights (keep same)
             S0  = 1.0;                  % desired spacing to lead
             safetyBoost = 4;            % extra margin first 3 steps
 
-            DEBUG = true;  % Set to false to disable debug output
+            DEBUG = false;  % Set to false to disable debug output
 
             % --- 1D reduction (position along travel axis) ---
             switch H.Dir
@@ -244,7 +263,7 @@ classdef Car<handle
 
             % --- Build (and cache) time-invariant prediction matrices ---
             % v = Av + S_v * U,   s = As + S_s * U
-            persistent T_c dt_c S_v S_s H_qp Q_u Ak_pows U_warm
+            persistent T_c dt_c S_v S_s H_qp Q_u Ak_pows
             if isempty(T_c) || T_c~=T || isempty(dt_c) || dt_c~=dt
                 % Precompute A^k
                 Ak_pows = cell(T+1,1);
@@ -277,7 +296,11 @@ classdef Car<handle
                 H_qp = sparse(H_qp); Q_u = sparse(Q_u);
 
                 T_c = T; dt_c = dt;
-                U_warm = zeros(T,1);
+            end
+            
+            % Initialize U_warm for this car if first call
+            if isempty(H.U_warm)
+                    H.U_warm = zeros(T,1);
             end
 
             % --- State-dependent parts (cheap each call) ---
@@ -329,40 +352,57 @@ classdef Car<handle
                 'OptimalityTolerance',1e-6, ...
                 'ConstraintTolerance',1e-6);
 
+            % Pre-initialize U to the warm-start as a safe default.
+            % This ensures U is always a T-length vector, even if quadprog
+            % returns an empty solution (which happens on some failure modes).
+            % Without this, any(~isfinite([])) = false in MATLAB, so the
+            % fallback block would silently not trigger, and we'd crash
+            % trying to index an empty U.
+            U = H.U_warm;
+            exitflag = -1;
+
             % If quadprog missing, graceful degrade
             solverAvailable = exist('quadprog','file')==2;
             if solverAvailable
-                [U,~,exitflag] = quadprog(H_qp, f_qp, Aineq, bineq, [], [], lb, ub, U_warm, opts);
+                [U_sol, ~, exitflag] = quadprog(H_qp, f_qp, Aineq, bineq, [], [], lb, ub, H.U_warm, opts);
+                % Only accept the solution if it is valid and complete
+                if exitflag > 0 && ~isempty(U_sol) && all(isfinite(U_sol))
+                    U = U_sol;
+                end
                 if DEBUG && P.ID == -1
                     fprintf('QP exitflag: %d (1=success, <=0=failed)\n', exitflag);
                 end
             else
                 warning('quadprog not available, using fallback controller');
-                U = U_warm; exitflag = 1; % fallback: keep last
+                U = H.U_warm; exitflag = 1;
             end
 
-            if exitflag <= 0 || any(~isfinite(U))
-                % Very occasional infeasibility: soft fallback to small accel toward Vd
-                % QP FAILED - Determine safe fallback
+            if exitflag <= 0 || isempty(U) || any(~isfinite(U))
+                % QP FAILED - build a full T-length fallback vector so that
+                % the warm-start shift below always produces a T-length result.
+                % Previously only U(1) was set, leaving U(2:end) from a
+                % failed/empty solve — this corrupted warm-start on next call.
                 current_gap = sL0 - s0;
                 stopping_dist = v0^2 / (2 * abs(Umn) + 0.01);
 
-                % If we're anywhere near needing to stop, BRAKE
                 if current_gap < stopping_dist * 1.5 + S0 + 20
-                    U(1) = Umn;  % Maximum braking
+                    u_fallback = Umn;  % Maximum braking
                 else
-                    % Safe distance - gentle speed control
-                    U(1) = max(min(0.3*(H.Vd - v0), Umx), Umn);
+                    u_fallback = max(min(0.3*(H.Vd - v0), Umx), Umn);
                 end
 
+                % Fill entire horizon with fallback value
+                U = u_fallback * ones(T, 1);
+
                 if DEBUG && P.ID == -1
-                    fprintf('QP FAILED! gap=%.1f, stop_dist=%.1f, fallback U(1)=%.2f\n', ...
-                        current_gap, stopping_dist, U(1));
+                    fprintf('QP FAILED! gap=%.1f, stop_dist=%.1f, fallback U=%.2f\n', ...
+                        current_gap, stopping_dist, u_fallback);
                 end
             end
 
-            % Update warm-start (shift)
-            U_warm = [U(2:end); U(end)];
+            % Update warm-start (shift by one step, repeat last)
+            % U is guaranteed to be T-length here, so this is always safe.
+            H.U_warm = [U(2:end); U(end)];
 
             % Apply first control
             Acel = U(1);
@@ -415,22 +455,216 @@ classdef Car<handle
                 Vnew = 0;
             end
         end
+
+        %% Initialize history structure for V2X (what car sends)
+        function H = initCarHistory()
+            H = struct('t',[], 'X',[], 'Y',[], 'V',[], 'Ac',[], ...
+                       'TurnRight',[], 'TurnedRight',[], ...
+                       'TurnLeft',[], 'TurnedLeft',[]);
+        end
+
+        %% Initialize history structure for X2V (what car receives)
+        function H = initX2VHistory()
+            H = struct('t',[], 'turn_signal',[], 'recommended_V',[], ...
+                       'recommended_Ac',[], 'priority',[], 'message',[]);
+        end
+
+        %% Trim to last K entries
+        function H = trimLastK(H, K)
+            fn = fieldnames(H);
+            for i = 1:numel(fn)
+                v = H.(fn{i});
+                if isnumeric(v)
+                    n = numel(v);
+                    if n > K
+                        H.(fn{i}) = v(n-K+1:n);
+                    end
+                elseif iscell(v)
+                    n = numel(v);
+                    if n > K
+                        H.(fn{i}) = v(n-K+1:n);
+                    end
+                end
+            end
+        end
     end
 
     methods
-        %% Sending V2X_Data
+        
+        %% ==================== V2X COMMUNICATION ====================
+        
+        %% Send V2X data to RSU
+        % Returns data packet that should be passed to RSU.ReceivingV2X()
         function data = SendingV2X(obj, t)
-            obj.v2x_data = struct('t', t, 'ID', obj.ID, 'X', obj.X, 'Y', obj.Y, 'V', obj.V, 'Ac', obj.Ac, ...
-                'Dir', obj.Dir, 'TurnRight', obj.TurnRight, 'TurnedRight', obj.TurnedRight, 'TurnLeft', obj.TurnLeft, 'TurnedLeft', obj.TurnedLeft);
+            % Create data packet
+            obj.v2x_data = struct(...
+                't', t, ...
+                'ID', obj.ID, ...
+                'X', obj.X, ...
+                'Y', obj.Y, ...
+                'V', obj.V, ...
+                'Ac', obj.Ac, ...
+                'Dir', obj.Dir, ...
+                'TurnRight', obj.TurnRight, ...
+                'TurnedRight', obj.TurnedRight, ...
+                'TurnLeft', obj.TurnLeft, ...
+                'TurnedLeft', obj.TurnedLeft ...
+            );
+            
+            % Store in permanent history
+            obj.StoreV2XSent(obj.v2x_data);
+            
+            % Store in temp (short) history
+            obj.StoreV2XSentShort(obj.v2x_data);
+            
             data = obj.v2x_data;
         end
 
-        % since data = vpos + turn_signal --> use if turn_signal is empty
-        % don't import it
-        %% Recieving X2V_Data
-        function RecievingX2V(obj, data)
-            obj.Recieved_data = data;
+        %% Store sent V2X data (permanent)
+        function StoreV2XSent(obj, data)
+            obj.str_v2x_data.t(end+1) = data.t;
+            obj.str_v2x_data.X(end+1) = data.X;
+            obj.str_v2x_data.Y(end+1) = data.Y;
+            obj.str_v2x_data.V(end+1) = data.V;
+            obj.str_v2x_data.Ac(end+1) = data.Ac;
+            obj.str_v2x_data.TurnRight(end+1) = double(data.TurnRight);
+            obj.str_v2x_data.TurnedRight(end+1) = double(data.TurnedRight);
+            obj.str_v2x_data.TurnLeft(end+1) = double(data.TurnLeft);
+            obj.str_v2x_data.TurnedLeft(end+1) = double(data.TurnedLeft);
+        end
+
+        %% Store sent V2X data (temp/short - keeps last K)
+        function StoreV2XSentShort(obj, data)
+            obj.str_v2x_data_short.t(end+1) = data.t;
+            obj.str_v2x_data_short.X(end+1) = data.X;
+            obj.str_v2x_data_short.Y(end+1) = data.Y;
+            obj.str_v2x_data_short.V(end+1) = data.V;
+            obj.str_v2x_data_short.Ac(end+1) = data.Ac;
+            obj.str_v2x_data_short.TurnRight(end+1) = double(data.TurnRight);
+            obj.str_v2x_data_short.TurnedRight(end+1) = double(data.TurnedRight);
+            obj.str_v2x_data_short.TurnLeft(end+1) = double(data.TurnLeft);
+            obj.str_v2x_data_short.TurnedLeft(end+1) = double(data.TurnedLeft);
+            
+            % Trim to last K entries
+            obj.str_v2x_data_short = Car.trimLastK(obj.str_v2x_data_short, obj.SHORT_K);
+        end
+
+        %% Reset short V2X storage (call from main when needed)
+        function ResetV2XShort(obj)
+            obj.str_v2x_data_short = Car.initCarHistory();
+        end
+
+        %% ============== X2V Communication ==============
+
+        %% Receive X2V data from RSU
+        % data should contain: t, turn_signal, recommended_V, recommended_Ac, priority, message
+        function ReceivingX2V(obj, data)
+            obj.x2v_data = data;
+            
+            % Apply turn signal if provided
+            if isfield(data, 'turn_signal') && ~isempty(data.turn_signal)
+                obj.Turn_signal = data.turn_signal;
+            end
+            
+            % Store in permanent history
+            obj.StoreX2VReceived(data);
+            
+            % Store in temp (short) history
+            obj.StoreX2VReceivedShort(data);
+        end
+
+        %% Store received X2V data (permanent)
+        function StoreX2VReceived(obj, data)
+            obj.str_x2v_data.t(end+1) = data.t;
+            
+            if isfield(data, 'turn_signal')
+                obj.str_x2v_data.turn_signal(end+1) = data.turn_signal;
+            else
+                obj.str_x2v_data.turn_signal(end+1) = NaN;
+            end
+            
+            if isfield(data, 'recommended_V')
+                obj.str_x2v_data.recommended_V(end+1) = data.recommended_V;
+            else
+                obj.str_x2v_data.recommended_V(end+1) = NaN;
+            end
+            
+            if isfield(data, 'recommended_Ac')
+                obj.str_x2v_data.recommended_Ac(end+1) = data.recommended_Ac;
+            else
+                obj.str_x2v_data.recommended_Ac(end+1) = NaN;
+            end
+            
+            if isfield(data, 'priority')
+                obj.str_x2v_data.priority(end+1) = data.priority;
+            else
+                obj.str_x2v_data.priority(end+1) = NaN;
+            end
+            
+            if isfield(data, 'message')
+                obj.str_x2v_data.message{end+1} = data.message;
+            else
+                obj.str_x2v_data.message{end+1} = '';
+            end
+        end
+
+        %% Store received X2V data (temp/short - keeps last K)
+        function StoreX2VReceivedShort(obj, data)
+            obj.str_x2v_data_short.t(end+1) = data.t;
+            
+            if isfield(data, 'turn_signal')
+                obj.str_x2v_data_short.turn_signal(end+1) = data.turn_signal;
+            else
+                obj.str_x2v_data_short.turn_signal(end+1) = NaN;
+            end
+            
+            if isfield(data, 'recommended_V')
+                obj.str_x2v_data_short.recommended_V(end+1) = data.recommended_V;
+            else
+                obj.str_x2v_data_short.recommended_V(end+1) = NaN;
+            end
+            
+            if isfield(data, 'recommended_Ac')
+                obj.str_x2v_data_short.recommended_Ac(end+1) = data.recommended_Ac;
+            else
+                obj.str_x2v_data_short.recommended_Ac(end+1) = NaN;
+            end
+            
+            if isfield(data, 'priority')
+                obj.str_x2v_data_short.priority(end+1) = data.priority;
+            else
+                obj.str_x2v_data_short.priority(end+1) = NaN;
+            end
+            
+            if isfield(data, 'message')
+                obj.str_x2v_data_short.message{end+1} = data.message;
+            else
+                obj.str_x2v_data_short.message{end+1} = '';
+            end
+            
+            % Trim to last K entries
+            obj.str_x2v_data_short = Car.trimLastK(obj.str_x2v_data_short, obj.SHORT_K);
+        end
+
+        %% Reset short X2V storage (call from main when needed)
+        function ResetX2VShort(obj)
+            obj.str_x2v_data_short = Car.initX2VHistory();
+        end
+
+        %% Reset all short storage
+        function ResetAllShort(obj)
+            obj.ResetV2XShort();
+            obj.ResetX2VShort();
+        end
+
+        %% Get last received X2V data
+        function data = GetLastX2V(obj)
+            data = obj.x2v_data;
+        end
+
+        %% Check if car has pending turn signal from RSU
+        function has = HasTurnSignal(obj)
+            has = ~isempty(obj.Turn_signal) && obj.Turn_signal ~= 0;
         end
     end
 end
-
