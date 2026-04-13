@@ -356,106 +356,139 @@ classdef RSU<handle
         function [ids, taus] = EstimateAllArrivalTimesIDM(obj, dir, trafficLight)
             % JOINT QUEUE SIMULATION
             %
-            % Previous approach: simulate each car independently, passing the
-            % REAL V2X position+velocity of the preceding car as a frozen lead.
-            % Bug: when cars are queued at green start (V≈0), the lead never
-            % moves in the follower's sim (ld = 0*dt = 0), so the follower
-            % crawls into a stationary wall, gap collapses, IDM gives maximum
-            % braking, and the car never reaches the stop line → Inf.
-            %
-            % Fix: simulate ALL cars together in a single loop.
-            % Car i follows car i-1's SIMULATED (accelerating) position,
-            % so the queue naturally discharges just as it does in reality.
-            %
-            % Also: always assume GREEN for planning (isRedOrYellow = false).
-            % The optimization is computing a plan for the current green phase;
-            % using the real signal state would stop vehicles at the line if
-            % called during yellow, producing wrong arrival times.
+            % Simulates all cars in the queue together so queue discharge
+            % is modelled correctly (car i follows car i-1's simulated
+            % position, not its frozen real-world V2X snapshot).
+            % Always assumes GREEN for planning purposes.
 
             [sorted_ids, ~] = obj.GetSortedVehiclesByDir(dir);
             n = length(sorted_ids);
             if n == 0, ids = []; taus = []; return; end
 
-            % --- Build initial sim state for each car ---
-            % Use smoothed short-storage data for realism.
-            sims = cell(1, n);
+            % --- Build initial sim states ---
+            sims    = cell(1, n);
+            keep    = true(1, n);   % false = already past stop line, skip
+
             for i = 1:n
                 d = obj.GetVehicleDataFromShort(sorted_ids(i), dir);
+                if isempty(d), d = obj.GetVehicleData(sorted_ids(i)); end
                 if isempty(d)
-                    d = obj.GetVehicleData(sorted_ids(i));
+                    keep(i) = false;
+                    sims{i} = struct('X',-999,'Y',-999,'V',0,'Dir',dir);
+                    continue;
                 end
-                if isempty(d)
-                    % Unknown vehicle — place it far back, stationary
-                    sims{i} = struct('X', -200, 'Y', -200, 'V', 0, 'Dir', dir);
-                else
-                    sims{i} = struct('X', d.X, 'Y', d.Y, ...
-                                     'V', max(d.V, 0), 'Dir', dir);
+                sims{i} = struct('X',d.X,'Y',d.Y,'V',max(d.V,0),'Dir',dir);
+
+                % Exclude cars that have ALREADY passed the stop line —
+                % they are done and should not appear in the queue.
+                if ~obj.IsBeforeStopLineSim(sims{i})
+                    keep(i) = false;
+                end
+            end
+
+            % Keep only pre-stop-line cars
+            valid_idx = find(keep);
+            if isempty(valid_idx), ids = []; taus = []; return; end
+            n2   = length(valid_idx);
+            sims2 = sims(valid_idx);
+            ids2  = sorted_ids(valid_idx);
+
+            % --- Enforce minimum inter-vehicle spacing in initial state ---
+            % V2X positions can reflect real-world "clamped" overlaps.
+            % A negative or zero gap causes IDM to brake indefinitely → Inf.
+            % Walk from front (i=1) to back, pushing each car back if needed.
+            for i = 2:n2
+                switch dir
+                    case 'E'
+                        gap = sims2{i-1}.X - sims2{i}.X - obj.vehicle_length;
+                        if gap < obj.s0
+                            sims2{i}.X = sims2{i-1}.X - obj.vehicle_length - obj.s0;
+                        end
+                    case 'W'
+                        gap = sims2{i}.X - sims2{i-1}.X - obj.vehicle_length;
+                        if gap < obj.s0
+                            sims2{i}.X = sims2{i-1}.X + obj.vehicle_length + obj.s0;
+                        end
+                    case 'N'
+                        gap = sims2{i-1}.Y - sims2{i}.Y - obj.vehicle_length;
+                        if gap < obj.s0
+                            sims2{i}.Y = sims2{i-1}.Y - obj.vehicle_length - obj.s0;
+                        end
+                    case 'S'
+                        gap = sims2{i}.Y - sims2{i-1}.Y - obj.vehicle_length;
+                        if gap < obj.s0
+                            sims2{i}.Y = sims2{i-1}.Y + obj.vehicle_length + obj.s0;
+                        end
                 end
             end
 
             % --- Run joint simulation ---
-            % Always assume green: vehicles model the queue discharge that
-            % will happen once the signal is (or stays) green.
-            isRedOrYellow = false;
-
+            isRedOrYellow = false;   % Always green for planning
             dt_s    = obj.dt_sim;
-            max_t   = 90;          % Extended from 60 s to handle long queues
-            taus    = Inf(1, n);
-            arrived = false(1, n);
+            max_t   = 120;           % Generous limit for long queues
+            taus2   = Inf(1, n2);
+            arrived = false(1, n2);
             t       = 0;
 
             while t < max_t
                 if all(arrived), break; end
 
-                for i = 1:n
-                    if arrived(i), continue; end
-
-                    % Lead = the simulated state of the car immediately ahead
-                    if i > 1
-                        lead_sim = sims{i-1};
-                    else
-                        lead_sim = [];
+                for i = 1:n2
+                    if arrived(i)
+                        % Keep arrived car moving at free-flow speed so the
+                        % car behind it can open its gap and follow through.
+                        switch dir
+                            case 'N', sims2{i}.Y = sims2{i}.Y + sims2{i}.V*dt_s;
+                            case 'S', sims2{i}.Y = sims2{i}.Y - sims2{i}.V*dt_s;
+                            case 'E', sims2{i}.X = sims2{i}.X + sims2{i}.V*dt_s;
+                            case 'W', sims2{i}.X = sims2{i}.X - sims2{i}.V*dt_s;
+                        end
+                        continue;
                     end
 
-                    isBeforeStop = obj.IsBeforeStopLineSim(sims{i});
-                    targetCar    = obj.DetermineTarget(sims{i}, lead_sim, ...
-                                        isRedOrYellow, isBeforeStop);
-                    acc          = obj.CalculateIDMAcceleration(sims{i}, targetCar);
+                    lead_sim = [];
+                    if i > 1, lead_sim = sims2{i-1}; end
 
-                    % Second-order kinematic step (same fix as Fix 1)
-                    v_old        = sims{i}.V;
-                    sims{i}.V    = sims{i}.V + acc * dt_s;
-                    if sims{i}.V < 0, sims{i}.V = 0; end
-                    delta        = v_old * dt_s + 0.5 * acc * dt_s^2;
+                    isBeforeStop = obj.IsBeforeStopLineSim(sims2{i});
+                    targetCar    = obj.DetermineTarget(sims2{i}, lead_sim, ...
+                                        isRedOrYellow, isBeforeStop);
+                    acc          = obj.CalculateIDMAcceleration(sims2{i}, targetCar);
+
+                    v_old         = sims2{i}.V;
+                    sims2{i}.V    = sims2{i}.V + acc * dt_s;
+                    if sims2{i}.V < 0, sims2{i}.V = 0; end
+                    delta         = v_old*dt_s + 0.5*acc*dt_s^2;
                     if v_old < 0.001 && acc < 0, delta = 0; end
 
                     switch dir
-                        case 'N', sims{i}.Y = sims{i}.Y + delta;
-                        case 'S', sims{i}.Y = sims{i}.Y - delta;
-                        case 'E', sims{i}.X = sims{i}.X + delta;
-                        case 'W', sims{i}.X = sims{i}.X - delta;
+                        case 'N', sims2{i}.Y = sims2{i}.Y + delta;
+                        case 'S', sims2{i}.Y = sims2{i}.Y - delta;
+                        case 'E', sims2{i}.X = sims2{i}.X + delta;
+                        case 'W', sims2{i}.X = sims2{i}.X - delta;
                     end
 
-                    % Record arrival the first time the car crosses the stop line
-                    if ~arrived(i) && obj.HasReachedStopLine(sims{i})
-                        taus(i)    = t + dt_s;
+                    if obj.HasReachedStopLine(sims2{i})
+                        taus2(i)   = t + dt_s;
                         arrived(i) = true;
+                        % Ensure car keeps moving at free-flow for followers
+                        if sims2{i}.V < obj.Vd * 0.5
+                            sims2{i}.V = obj.Vd;
+                        end
                     end
                 end
 
                 t = t + dt_s;
             end
 
-            % --- Apply minimum headway at the intersection ---
-            % Even if simulation gives an earlier time due to tight platoon,
-            % enforce h_time spacing between consecutive arrivals.
-            for i = 2:n
-                if ~isinf(taus(i-1))
-                    taus(i) = max(taus(i), taus(i-1) + obj.h_time);
+            % Apply minimum headway at intersection
+            for i = 2:n2
+                if ~isinf(taus2(i-1))
+                    taus2(i) = max(taus2(i), taus2(i-1) + obj.h_time);
                 end
             end
 
-            ids = sorted_ids;
+            ids  = ids2;
+            taus = taus2;
         end
 
         %% RIGHT-TURN OPTIMIZATION
@@ -483,16 +516,27 @@ classdef RSU<handle
                 [tau_E, tau_W, feasible] = obj.ComputeCoordinatedTimes_EW(tau_bar_E, tau_bar_W, p, q, straight_E_mask);
                 if ~feasible, continue; end
                 delay_E = tau_E - tau_bar_E; delay_W = tau_W - tau_bar_W;
-                cost = obj.omega_East*sum(delay_E.^2) + obj.omega_West*sum(delay_W.^2);
+                % Exclude Inf entries: Inf-Inf = NaN, which poisons the sum.
+                % Vehicles with unknown arrival time (Inf) contribute zero delay —
+                % we can't improve what we can't estimate.
+                mask_E = isfinite(tau_bar_E); mask_W = isfinite(tau_bar_W);
+                cost = obj.omega_East*sum(delay_E(mask_E).^2) + obj.omega_West*sum(delay_W(mask_W).^2);
                 fprintf('p=%d: cost=%.2f\n', p, cost);
                 if cost < min_cost
                     min_cost=cost; opt_p=p; best_tau_E=tau_E; best_tau_W=tau_W;
                 end
             end
             coordinated_tau_E=best_tau_E; coordinated_tau_W=best_tau_W;
+            % Preserve eTurnerID from any existing result so that the E-turner
+            % alreadyOptimized check doesn't see [] and trigger a re-run.
+            existing_eTurnerID = [];
+            if isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW) && ...
+               isfield(obj.opt_results.EW,'eTurnerID')
+                existing_eTurnerID = obj.opt_results.EW.eTurnerID;
+            end
             obj.opt_results.EW = struct('opt_p',opt_p,'tau_E',coordinated_tau_E,'tau_W',coordinated_tau_W,...
                 'tau_bar_E',tau_bar_E,'tau_bar_W',tau_bar_W,'ids_E',ids_E,'ids_W',ids_W,...
-                'turningCarID',turningCarID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'wTurnerID',turningCarID,'eTurnerID',existing_eTurnerID,'min_cost',min_cost);
             fprintf('=== OPTIMAL: p=%d, cost=%.2f ===\n', opt_p, min_cost);
         end
 
@@ -527,13 +571,23 @@ classdef RSU<handle
                 [tau_S, tau_N, feasible] = obj.ComputeCoordinatedTimes_NS(tau_bar_S, tau_bar_N, p, q, straight_S_mask);
                 if ~feasible, continue; end
                 delay_S = tau_S - tau_bar_S; delay_N = tau_N - tau_bar_N;
-                cost = obj.omega_NS*sum(delay_S.^2) + obj.omega_NS*sum(delay_N.^2);
+                % Exclude Inf entries (Inf-Inf=NaN poisons the sum).
+                mask_S = isfinite(tau_bar_S); mask_N = isfinite(tau_bar_N);
+                cost = obj.omega_NS*sum(delay_S(mask_S).^2) + obj.omega_NS*sum(delay_N(mask_N).^2);
                 if cost < min_cost, min_cost=cost; opt_p=p; best_tau_S=tau_S; best_tau_N=tau_N; end
             end
             coordinated_tau_S=best_tau_S; coordinated_tau_N=best_tau_N;
+            % Preserve sTurnerID from any existing NS result so the S-turner
+            % alreadyOptimized check doesn't see [] and re-fire every timestep.
+            % This is the exact NS equivalent of EW preserving eTurnerID.
+            existing_sTurnerID = [];
+            if isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS) && ...
+               isfield(obj.opt_results.NS,'sTurnerID')
+                existing_sTurnerID = obj.opt_results.NS.sTurnerID;
+            end
             obj.opt_results.NS = struct('opt_p',opt_p,'tau_S',coordinated_tau_S,'tau_N',coordinated_tau_N,...
                 'tau_bar_S',tau_bar_S,'tau_bar_N',tau_bar_N,'ids_S',ids_S,'ids_N',ids_N,...
-                'turningCarID',turningCarID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'nTurnerID',turningCarID,'sTurnerID',existing_sTurnerID,'min_cost',min_cost);
         end
 
         function [tau_S, tau_N, feasible] = ComputeCoordinatedTimes_NS(obj, tau_bar_S, tau_bar_N, p, q, straight_S_mask)
@@ -571,13 +625,26 @@ classdef RSU<handle
                 % condition is always false — kept for structural symmetry only.
                 if any(tau_W<tau_bar_W-0.01)||any(tau_E<tau_bar_E-0.01), continue; end
                 delay_W=tau_W-tau_bar_W; delay_E=tau_E-tau_bar_E;
-                cost = obj.omega_West*sum(delay_W.^2) + obj.omega_East*sum(delay_E.^2);
+                % Exclude Inf entries (Inf-Inf=NaN poisons the sum).
+                mask_W=isfinite(tau_bar_W); mask_E=isfinite(tau_bar_E);
+                cost = obj.omega_West*sum(delay_W(mask_W).^2) + obj.omega_East*sum(delay_E(mask_E).^2);
                 if cost<min_cost, min_cost=cost; opt_p=p; best_tau_W=tau_W; best_tau_E=tau_E; end
             end
             coordinated_tau_W=best_tau_W; coordinated_tau_E=best_tau_E;
+            % Preserve wTurnerID from any existing EW result so that the
+            % W-turner alreadyOptimized check (in RunGreenPhaseOptimization
+            % and RightTurnOpt) does not see [] and trigger a re-run.
+            % Previously this field was hardcoded to [], causing an
+            % every-timestep loop: EW_Reverse wiped wTurnerID → W check
+            % failed → EW ran → overwrote eTurnerID → E check failed → …
+            existing_wTurnerID = [];
+            if isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW) && ...
+               isfield(obj.opt_results.EW,'wTurnerID')
+                existing_wTurnerID = obj.opt_results.EW.wTurnerID;
+            end
             obj.opt_results.EW = struct('opt_p',opt_p,'tau_E',coordinated_tau_E,'tau_W',coordinated_tau_W,...
                 'tau_bar_E',tau_bar_E,'tau_bar_W',tau_bar_W,'ids_E',ids_E,'ids_W',ids_W,...
-                'turningCarID',turningCarID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'wTurnerID',existing_wTurnerID,'eTurnerID',turningCarID,'min_cost',min_cost);
         end
 
         function [opt_p, coordinated_tau_N, coordinated_tau_S, min_cost] = OptimizeRightTurn_NS_Reverse(obj, turningCarID, trafficLight)
@@ -602,13 +669,21 @@ classdef RSU<handle
                 % condition is always false — kept for structural symmetry only.
                 if any(tau_N<tau_bar_N-0.01)||any(tau_S<tau_bar_S-0.01), continue; end
                 delay_N=tau_N-tau_bar_N; delay_S=tau_S-tau_bar_S;
-                cost = obj.omega_NS*sum(delay_N.^2) + obj.omega_NS*sum(delay_S.^2);
+                % Exclude Inf entries (Inf-Inf=NaN poisons the sum).
+                mask_N=isfinite(tau_bar_N); mask_S=isfinite(tau_bar_S);
+                cost = obj.omega_NS*sum(delay_N(mask_N).^2) + obj.omega_NS*sum(delay_S(mask_S).^2);
                 if cost<min_cost, min_cost=cost; opt_p=p; best_tau_N=tau_N; best_tau_S=tau_S; end
             end
             coordinated_tau_N=best_tau_N; coordinated_tau_S=best_tau_S;
+            % Preserve nTurnerID for the same reason as EW_Reverse preserves wTurnerID.
+            existing_nTurnerID = [];
+            if isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS) && ...
+               isfield(obj.opt_results.NS,'nTurnerID')
+                existing_nTurnerID = obj.opt_results.NS.nTurnerID;
+            end
             obj.opt_results.NS = struct('opt_p',opt_p,'tau_N',coordinated_tau_N,'tau_S',coordinated_tau_S,...
                 'tau_bar_N',tau_bar_N,'tau_bar_S',tau_bar_S,'ids_N',ids_N,'ids_S',ids_S,...
-                'turningCarID',turningCarID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'nTurnerID',existing_nTurnerID,'sTurnerID',turningCarID,'min_cost',min_cost);
         end
 
         %% VELOCITY RECOMMENDATION
@@ -661,12 +736,14 @@ classdef RSU<handle
                     end
                 end
 
-                % Re-optimize for W turner if it changed
+                % Re-optimize for W turner if it changed.
+                % Uses wTurnerID (not turningCarID) so the W and E checks
+                % don't overwrite each other and cause every-timestep re-runs.
                 if ~isempty(wTurner)
                     alreadyOptimized = isfield(obj.opt_results,'EW') && ...
                                        ~isempty(obj.opt_results.EW) && ...
-                                       isfield(obj.opt_results.EW,'turningCarID') && ...
-                                       obj.opt_results.EW.turningCarID == wTurner;
+                                       isfield(obj.opt_results.EW,'wTurnerID') && ...
+                                       isequal(obj.opt_results.EW.wTurnerID, wTurner);
                     if ~alreadyOptimized
                         fprintf('\n[t=%.1f] W turner %d (new) - running EW optimization\n', t, wTurner);
                         obj.OptimizeRightTurn_EW(wTurner, trafficLight);
@@ -674,12 +751,12 @@ classdef RSU<handle
                     end
                 end
 
-                % Re-optimize for E turner if it changed
+                % Re-optimize for E turner if it changed.
                 if ~isempty(eTurner)
                     alreadyOptimized = isfield(obj.opt_results,'EW') && ...
                                        ~isempty(obj.opt_results.EW) && ...
-                                       isfield(obj.opt_results.EW,'turningCarID') && ...
-                                       obj.opt_results.EW.turningCarID == eTurner;
+                                       isfield(obj.opt_results.EW,'eTurnerID') && ...
+                                       isequal(obj.opt_results.EW.eTurnerID, eTurner);
                     if ~alreadyOptimized
                         fprintf('\n[t=%.1f] E turner %d (new) - running EW_Reverse optimization\n', t, eTurner);
                         obj.OptimizeRightTurn_EW_Reverse(eTurner, trafficLight);
@@ -714,8 +791,8 @@ classdef RSU<handle
                 if ~isempty(nTurner)
                     alreadyOptimized = isfield(obj.opt_results,'NS') && ...
                                        ~isempty(obj.opt_results.NS) && ...
-                                       isfield(obj.opt_results.NS,'turningCarID') && ...
-                                       obj.opt_results.NS.turningCarID == nTurner;
+                                       isfield(obj.opt_results.NS,'nTurnerID') && ...
+                                       isequal(obj.opt_results.NS.nTurnerID, nTurner);
                     if ~alreadyOptimized
                         fprintf('\n[t=%.1f] N turner %d (new) - running NS optimization\n', t, nTurner);
                         obj.OptimizeRightTurn_NS(nTurner, trafficLight);
@@ -726,8 +803,8 @@ classdef RSU<handle
                 if ~isempty(sTurner)
                     alreadyOptimized = isfield(obj.opt_results,'NS') && ...
                                        ~isempty(obj.opt_results.NS) && ...
-                                       isfield(obj.opt_results.NS,'turningCarID') && ...
-                                       obj.opt_results.NS.turningCarID == sTurner;
+                                       isfield(obj.opt_results.NS,'sTurnerID') && ...
+                                       isequal(obj.opt_results.NS.sTurnerID, sTurner);
                     if ~alreadyOptimized
                         fprintf('\n[t=%.1f] S turner %d (new) - running NS_Reverse optimization\n', t, sTurner);
                         obj.OptimizeRightTurn_NS_Reverse(sTurner, trafficLight);
@@ -822,16 +899,30 @@ classdef RSU<handle
             tau = NaN;
 
             if strcmp(dir, 'E') || strcmp(dir, 'W')
-                % Check if we have valid optimization results for THIS vehicle.
-                % hasValidOpt is false when: no results exist yet, OR the cached
-                % result was for a different turning car (e.g. a new turner arrived
-                % mid-phase). In that case we re-optimize for the new turner,
-                % which intentionally replaces the previous result.
+                % hasValidOpt must use the DIRECTION-SPECIFIC turner ID fields
+                % (wTurnerID / eTurnerID), NOT turningCarID.
+                %
+                % Bug that was here: turningCarID alternates — EW writes
+                % turningCarID=wID, then EW_Reverse writes turningCarID=eID.
+                % So a W car always saw turningCarID≠wID and re-ran EW, which
+                % made the E car re-run EW_Reverse, creating a per-timestep loop
+                % that produced hundreds of redundant optimization calls and
+                % kept the old (Inf-Inf=NaN) cost result in the print output.
                 hasValidOpt = isfield(obj.opt_results, 'EW') && ~isempty(obj.opt_results.EW);
 
                 if hasValidOpt
-                    if obj.opt_results.EW.turningCarID ~= vehicleID
-                        hasValidOpt = false;
+                    if strcmp(dir, 'W')
+                        % W turner: check wTurnerID field
+                        if ~isfield(obj.opt_results.EW, 'wTurnerID') || ...
+                           ~isequal(obj.opt_results.EW.wTurnerID, vehicleID)
+                            hasValidOpt = false;
+                        end
+                    else
+                        % E turner: check eTurnerID field
+                        if ~isfield(obj.opt_results.EW, 'eTurnerID') || ...
+                           ~isequal(obj.opt_results.EW.eTurnerID, vehicleID)
+                            hasValidOpt = false;
+                        end
                     end
                 end
 
@@ -846,12 +937,19 @@ classdef RSU<handle
                 tau = obj.GetCoordinatedArrivalTime(vehicleID, dir);
 
             else  % N or S
-                % Same guard: only re-optimize when the turner changes.
                 hasValidOpt = isfield(obj.opt_results, 'NS') && ~isempty(obj.opt_results.NS);
 
                 if hasValidOpt
-                    if obj.opt_results.NS.turningCarID ~= vehicleID
-                        hasValidOpt = false;
+                    if strcmp(dir, 'N')
+                        if ~isfield(obj.opt_results.NS, 'nTurnerID') || ...
+                           ~isequal(obj.opt_results.NS.nTurnerID, vehicleID)
+                            hasValidOpt = false;
+                        end
+                    else
+                        if ~isfield(obj.opt_results.NS, 'sTurnerID') || ...
+                           ~isequal(obj.opt_results.NS.sTurnerID, vehicleID)
+                            hasValidOpt = false;
+                        end
                     end
                 end
 
