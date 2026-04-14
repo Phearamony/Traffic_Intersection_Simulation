@@ -96,6 +96,11 @@ CarIDW = CarIDW + 1;
 carW.Dir = 'W';
 CarW(end+1) = carW;
 
+
+% --- Fuel & idle log (one entry per completed vehicle trip) ---
+FuelLog = struct('ID',{},'Dir',{},'TurnRight',{},'TurnedRight',{}, ...
+    'fuel_total',{},'idle_gap_time',{},'idle_red_time',{});
+
 for KK = 1:KKmax
     %% === Traffic Light Phases ===
     t = mod(KK*dt, Cycle);
@@ -894,6 +899,60 @@ for KK = 1:KKmax
 
 
 
+
+    %% === Fuel & Idle Tracking ===
+    % Compute f_c per vehicle per timestep; classify idle state.
+    % idle_type 'gap'  = right-turner stopped waiting for a gap
+    % idle_type 'red'  = non-turning car stopped at a red/yellow light
+    isRedNS = strcmp(TrafficLight.NS,'red') || strcmp(TrafficLight.NS,'yellow');
+    isRedEW = strcmp(TrafficLight.EW,'red') || strcmp(TrafficLight.EW,'yellow');
+    for i = 1:length(CarN)
+        car = CarN(i);
+        if car.TurnRight && ~car.TurnedRight && car.V < 0.5
+            itype = 'gap';
+        elseif ~car.TurnRight && isRedNS && car.Y < -stop_line && car.V < 0.5
+            itype = 'red';
+        else, itype = 'none'; end
+        car.UpdateFuel(dt, itype);
+    end
+    for i = 1:length(CarS)
+        car = CarS(i);
+        if car.TurnRight && ~car.TurnedRight && car.V < 0.5
+            itype = 'gap';
+        elseif ~car.TurnRight && isRedNS && car.Y > stop_line && car.V < 0.5
+            itype = 'red';
+        else, itype = 'none'; end
+        car.UpdateFuel(dt, itype);
+    end
+    for i = 1:length(CarE)
+        car = CarE(i);
+        if car.TurnRight && ~car.TurnedRight && car.V < 0.5
+            itype = 'gap';
+        elseif ~car.TurnRight && isRedEW && car.X < -stop_line && car.V < 0.5
+            itype = 'red';
+        else, itype = 'none'; end
+        car.UpdateFuel(dt, itype);
+    end
+    for i = 1:length(CarW)
+        car = CarW(i);
+        if car.TurnRight && ~car.TurnedRight && car.V < 0.5
+            itype = 'gap';
+        elseif ~car.TurnRight && isRedEW && car.X > stop_line && car.V < 0.5
+            itype = 'red';
+        else, itype = 'none'; end
+        car.UpdateFuel(dt, itype);
+    end
+
+    % Harvest fuel stats from vehicles that are about to leave the grid
+    exitMaskN = abs([CarN.X]) > 170 | abs([CarN.Y]) > 170;
+    exitMaskS = abs([CarS.X]) > 170 | abs([CarS.Y]) > 170;
+    exitMaskE = abs([CarE.X]) > 170 | abs([CarE.Y]) > 170;
+    exitMaskW = abs([CarW.X]) > 170 | abs([CarW.Y]) > 170;
+    for idx = find(exitMaskN), FuelLog(end+1) = fuelEntry(CarN(idx)); end
+    for idx = find(exitMaskS), FuelLog(end+1) = fuelEntry(CarS(idx)); end
+    for idx = find(exitMaskE), FuelLog(end+1) = fuelEntry(CarE(idx)); end
+    for idx = find(exitMaskW), FuelLog(end+1) = fuelEntry(CarW(idx)); end
+
     %% === Remove cars out of bounds ===
     % N
     CarN = CarN(abs([CarN.X]) <= 170 & abs([CarN.Y]) <= 170);
@@ -911,6 +970,17 @@ plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneD
 plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_idm.png');
 
 plot_EW_accelerations(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_idm_ac.png');
+
+% Collect fuel stats from cars still on grid at end of simulation
+for idx = 1:length(CarN), FuelLog(end+1) = fuelEntry(CarN(idx)); end
+for idx = 1:length(CarS), FuelLog(end+1) = fuelEntry(CarS(idx)); end
+for idx = 1:length(CarE), FuelLog(end+1) = fuelEntry(CarE(idx)); end
+for idx = 1:length(CarW), FuelLog(end+1) = fuelEntry(CarW(idx)); end
+
+% Plot fuel consumption & idle analysis
+out_base = fileparts(mfilename('fullpath'));
+fuel_out = fullfile(out_base, '..', 'output', 'fuel_idm.png');
+plot_fuel_consumption(FuelLog, 'V2X + IDM', fuel_out);
 
 
 %% === Helper Functions ===
@@ -1027,4 +1097,13 @@ function clear = isSpawnClear(carList, axis, spawnPos, safeGap)
     if any(abs(positions - spawnPos) < safeGap)
         clear = false;
     end
+end
+
+function s = fuelEntry(car)
+% Pack a car's fuel & idle counters into a FuelLog struct row.
+s = struct('ID', car.ID, 'Dir', car.Dir, ...
+    'TurnRight', car.TurnRight, 'TurnedRight', car.TurnedRight, ...
+    'fuel_total',    car.fuel_total, ...
+    'idle_gap_time', car.idle_gap_time, ...
+    'idle_red_time', car.idle_red_time);
 end

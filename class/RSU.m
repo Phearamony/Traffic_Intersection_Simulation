@@ -913,8 +913,36 @@ classdef RSU<handle
             if ~isempty(oppDir)
                 opposingTurner = obj.FindFirstRightTurner(oppDir);
                 if ~isempty(opposingTurner)
-                    fprintf('[t=%.1f] MUTUAL RIGHT-TURN: %s(%d) & %s(%d) - BOTH PROCEED\n', ...
-                        t, dir, vehicleID, oppDir, opposingTurner);
+                    % Only print on FIRST detection of this specific pair.
+                    % Without this guard the message fires every timestep until
+                    % the car physically completes the turn — which may take many
+                    % steps if the spawn point is temporarily blocked by queued cars.
+                    alreadyKnown = false;
+                    if strcmp(dir,'E') || strcmp(dir,'W')
+                        if isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW)
+                            if strcmp(dir,'W')
+                                alreadyKnown = isfield(obj.opt_results.EW,'wTurnerID') && ...
+                                              isequal(obj.opt_results.EW.wTurnerID, vehicleID);
+                            else
+                                alreadyKnown = isfield(obj.opt_results.EW,'eTurnerID') && ...
+                                              isequal(obj.opt_results.EW.eTurnerID, vehicleID);
+                            end
+                        end
+                    else
+                        if isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS)
+                            if strcmp(dir,'N')
+                                alreadyKnown = isfield(obj.opt_results.NS,'nTurnerID') && ...
+                                              isequal(obj.opt_results.NS.nTurnerID, vehicleID);
+                            else
+                                alreadyKnown = isfield(obj.opt_results.NS,'sTurnerID') && ...
+                                              isequal(obj.opt_results.NS.sTurnerID, vehicleID);
+                            end
+                        end
+                    end
+                    if ~alreadyKnown
+                        fprintf('[t=%.1f] MUTUAL RIGHT-TURN: %s(%d) & %s(%d) - BOTH PROCEED\n', ...
+                            t, dir, vehicleID, oppDir, opposingTurner);
+                    end
                     registerTurnerID();
                     turn_signal = 1;
                     vpos = struct('vehicle_id',vehicleID,'direction',dir,...

@@ -33,7 +33,12 @@ classdef Car<handle
         SHORT_K = 20;  % keep last K entries in short storage
 
         % warm-start vector for mpc
-        U_warm = []; 
+        U_warm = [];
+
+        % ---- Fuel & idle tracking ----
+        fuel_total    = 0;   % cumulative fuel consumed [ml]
+        idle_gap_time = 0;   % time spent stopped waiting for a right-turn gap [s]
+        idle_red_time = 0;   % time spent stopped at a red/yellow light [s]
     end
 
     methods
@@ -658,6 +663,38 @@ classdef Car<handle
         %% Check if car has pending turn signal from RSU
         function has = HasTurnSignal(obj)
             has = ~isempty(obj.Turn_signal) && obj.Turn_signal ~= 0;
+        end
+
+        %% Fuel consumption update — call once per timestep after fdp/fdv
+        % idle_type: 'gap'  → car is stopped waiting for a right-turn gap
+        %            'red'  → car is stopped at a red/yellow traffic light
+        %            'none' → car is moving normally
+        %
+        % Formula (Bowyer et al.):
+        %   f_c = b0 + b1*v + b2*v^2 + b3*v^3 + u_bar*(c0 + c1*v + c2*v^2)
+        %   u_bar = max(u, 0)   [only positive (throttle) portion burns fuel]
+        function UpdateFuel(obj, dt_val, idle_type)
+            b0 = 0.156;      b1 = 2.450e-2;
+            b2 = -7.415e-4;  b3 = 5.975e-5;
+            c0 = 0.07224;    c1 = 9.681e-2;   c2 = 1.075e-3;
+
+            v     = max(obj.V,  0);
+            u_bar = max(obj.Ac, 0);
+
+            fc = b0 + b1*v + b2*v^2 + b3*v^3 + u_bar*(c0 + c1*v + c2*v^2);
+            fc = max(fc, b0);           % floor at idle baseline rate
+
+            obj.fuel_total = obj.fuel_total + fc * dt_val;
+
+            % Only count as idling when the car is genuinely stopped
+            if obj.V < 0.5
+                switch idle_type
+                    case 'gap'
+                        obj.idle_gap_time = obj.idle_gap_time + dt_val;
+                    case 'red'
+                        obj.idle_red_time = obj.idle_red_time + dt_val;
+                end
+            end
         end
     end
 end
