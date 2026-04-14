@@ -205,14 +205,16 @@ for KK = 1:KKmax
         fprintf('\n========================================\n');
         fprintf('[t=%.1f] EW GREEN START - Running RSU optimization...\n', tsec);
         fprintf('========================================\n');
-        RSU1.opt_results.EW = [];   % Force fresh optimization at phase start
+        RSU1.opt_results.EW = [];     % Force fresh optimization at phase start
+        RSU1.opt_results.EW_rev = [];  % Clear E-turner result too
+        RSU1.last_opt_veh_ids.EW = []; % Reset 50m-radius trigger for new phase
         RSU1.RunGreenPhaseOptimization(tsec, 'EW', TrafficLight);
         RSU1.PrintArrivalTimes(TrafficLight);
         opt_run_EW = true;
     elseif strcmp(TrafficLight.EW, 'green')
         % Mid-phase: re-run only if a new turner arrived (cheap check)
         if RSU1.RunGreenPhaseOptimization(tsec, 'EW', TrafficLight)
-            fprintf('[t=%.1f] EW re-optimized for new turner\n', tsec);
+            fprintf('[t=%.1f] EW re-optimized (vehicle set changed)\n', tsec);
             RSU1.PrintArrivalTimes(TrafficLight);
         end
     end
@@ -221,13 +223,15 @@ for KK = 1:KKmax
         fprintf('\n========================================\n');
         fprintf('[t=%.1f] NS GREEN START - Running RSU optimization...\n', tsec);
         fprintf('========================================\n');
-        RSU1.opt_results.NS = [];   % Force fresh optimization at phase start
+        RSU1.opt_results.NS = [];     % Force fresh optimization at phase start
+        RSU1.opt_results.NS_rev = [];  % Clear S-turner result too
+        RSU1.last_opt_veh_ids.NS = []; % Reset 50m-radius trigger for new phase
         RSU1.RunGreenPhaseOptimization(tsec, 'NS', TrafficLight);
         RSU1.PrintArrivalTimes(TrafficLight);
         opt_run_NS = true;
     elseif strcmp(TrafficLight.NS, 'green')
         if RSU1.RunGreenPhaseOptimization(tsec, 'NS', TrafficLight)
-            fprintf('[t=%.1f] NS re-optimized for new turner\n', tsec);
+            fprintf('[t=%.1f] NS re-optimized (vehicle set changed)\n', tsec);
             RSU1.PrintArrivalTimes(TrafficLight);
         end
     end

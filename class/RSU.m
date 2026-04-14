@@ -39,6 +39,10 @@ classdef RSU<handle
         s0 = 2.0;
         T_hw = 1.5;
         vehicle_length = 4.0;
+
+        % Tracks which vehicles were within REOPT_RADIUS at the last
+        % optimization run, used to detect new arrivals (50-m trigger).
+        last_opt_veh_ids = struct('EW', [], 'NS', []);
     end
 
     methods
@@ -379,10 +383,20 @@ classdef RSU<handle
                 end
                 sims{i} = struct('X',d.X,'Y',d.Y,'V',max(d.V,0),'Dir',dir);
 
-                % Exclude cars that have ALREADY passed the stop line —
-                % they are done and should not appear in the queue.
+                % Exclude cars that have ALREADY passed the stop line,
+                % EXCEPT right-turning unturned cars sitting at the wait point —
+                % they are still waiting for a gap and must appear in the
+                % optimization so q = find(ids == turnerID) can locate them.
                 if ~obj.IsBeforeStopLineSim(sims{i})
-                    keep(i) = false;
+                    if d.TurnRight && ~d.TurnedRight
+                        % Right-turner at the wait point: treat as arriving NOW
+                        % (tau = dt_sim). Do not simulate — just assign directly.
+                        sims{i}.atWaitPoint = true;
+                    else
+                        keep(i) = false;
+                    end
+                else
+                    sims{i}.atWaitPoint = false;
                 end
             end
 
@@ -429,6 +443,15 @@ classdef RSU<handle
             taus2   = Inf(1, n2);
             arrived = false(1, n2);
             t       = 0;
+
+            % Right-turning cars already at the wait point arrive immediately
+            for i = 1:n2
+                if isfield(sims2{i},'atWaitPoint') && sims2{i}.atWaitPoint
+                    taus2(i)   = dt_s;   % arrives at first step
+                    arrived(i) = true;
+                    sims2{i}.V = obj.Vd; % move at free-flow so followers open gap
+                end
+            end
 
             while t < max_t
                 if all(arrived), break; end
@@ -631,20 +654,12 @@ classdef RSU<handle
                 if cost<min_cost, min_cost=cost; opt_p=p; best_tau_W=tau_W; best_tau_E=tau_E; end
             end
             coordinated_tau_W=best_tau_W; coordinated_tau_E=best_tau_E;
-            % Preserve wTurnerID from any existing EW result so that the
-            % W-turner alreadyOptimized check (in RunGreenPhaseOptimization
-            % and RightTurnOpt) does not see [] and trigger a re-run.
-            % Previously this field was hardcoded to [], causing an
-            % every-timestep loop: EW_Reverse wiped wTurnerID → W check
-            % failed → EW ran → overwrote eTurnerID → E check failed → …
-            existing_wTurnerID = [];
-            if isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW) && ...
-               isfield(obj.opt_results.EW,'wTurnerID')
-                existing_wTurnerID = obj.opt_results.EW.wTurnerID;
-            end
-            obj.opt_results.EW = struct('opt_p',opt_p,'tau_E',coordinated_tau_E,'tau_W',coordinated_tau_W,...
+            % Store E-turner result in EW_rev so it never overwrites the
+            % W-turner result in EW. Both can coexist for mutual-turn phases.
+            obj.opt_results.EW_rev = struct('opt_p',opt_p,'tau_E',coordinated_tau_E,'tau_W',coordinated_tau_W,...
                 'tau_bar_E',tau_bar_E,'tau_bar_W',tau_bar_W,'ids_E',ids_E,'ids_W',ids_W,...
-                'turningCarID',turningCarID,'wTurnerID',existing_wTurnerID,'eTurnerID',turningCarID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'eTurnerID',turningCarID,'min_cost',min_cost);
+            fprintf('=== OPTIMAL (EW_rev): p*=%d, cost=%.2f ===\n', opt_p, min_cost);
         end
 
         function [opt_p, coordinated_tau_N, coordinated_tau_S, min_cost] = OptimizeRightTurn_NS_Reverse(obj, turningCarID, trafficLight)
@@ -675,15 +690,11 @@ classdef RSU<handle
                 if cost<min_cost, min_cost=cost; opt_p=p; best_tau_N=tau_N; best_tau_S=tau_S; end
             end
             coordinated_tau_N=best_tau_N; coordinated_tau_S=best_tau_S;
-            % Preserve nTurnerID for the same reason as EW_Reverse preserves wTurnerID.
-            existing_nTurnerID = [];
-            if isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS) && ...
-               isfield(obj.opt_results.NS,'nTurnerID')
-                existing_nTurnerID = obj.opt_results.NS.nTurnerID;
-            end
-            obj.opt_results.NS = struct('opt_p',opt_p,'tau_N',coordinated_tau_N,'tau_S',coordinated_tau_S,...
+            % Store S-turner result in NS_rev (same reason as EW_rev).
+            obj.opt_results.NS_rev = struct('opt_p',opt_p,'tau_N',coordinated_tau_N,'tau_S',coordinated_tau_S,...
                 'tau_bar_N',tau_bar_N,'tau_bar_S',tau_bar_S,'ids_N',ids_N,'ids_S',ids_S,...
-                'turningCarID',turningCarID,'nTurnerID',existing_nTurnerID,'sTurnerID',turningCarID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'sTurnerID',turningCarID,'min_cost',min_cost);
+            fprintf('=== OPTIMAL (NS_rev): p*=%d, cost=%.2f ===\n', opt_p, min_cost);
         end
 
         %% VELOCITY RECOMMENDATION
@@ -707,24 +718,32 @@ classdef RSU<handle
 
         %% HIGH-LEVEL COORDINATION
         function didRun = RunGreenPhaseOptimization(obj, t, greenDir, trafficLight)
-            % Runs RSU right-turn optimization for the given green direction.
-            % Called at green-phase START and again whenever a new right-turner
-            % arrives mid-phase that wasn't included in the last optimization.
+            % Re-optimizes whenever the set of vehicles within REOPT_RADIUS m of
+            % the RSU changes (new arrival or departure) — 50-m trigger.
+            % Per [7]: optimize at green start; here extended to re-optimize on
+            % any queue change so late arrivals are included automatically.
             %
-            % Returns true if optimization actually ran (for logging).
+            % Three cases:
+            %   (a) Only W (or N) has a right-turner → gap-slot opt vs. E (or S) straight
+            %   (b) Only E (or S) has a right-turner → gap-slot opt vs. W (or N) straight
+            %   (c) Both sides have right-turners  → mutual turn, no gap-slot opt needed
 
             didRun = false;
+            REOPT_RADIUS = 50;  % [m] re-optimize when vehicle set within this radius changes
 
             if strcmp(greenDir, 'EW')
-                % Use sorted order (closest to stop line first) so the frontmost
-                % right-turner gets the slot, not an arbitrary arrival-order car.
+                % --- Check if vehicle set within 50 m changed ---
+                cur_ids = sort([obj.GetVehiclesWithinRadius(REOPT_RADIUS, 'E'), ...
+                                obj.GetVehiclesWithinRadius(REOPT_RADIUS, 'W')]);
+                hasResult = isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW);
+                if isequal(cur_ids, obj.last_opt_veh_ids.EW) && hasResult
+                    return;  % Nothing changed — keep existing result
+                end
+
+                % --- Find frontmost unturned right-turner for each approach ---
                 [ids_W, ~] = obj.GetSortedVehiclesByDir('W');
                 [ids_E, ~] = obj.GetSortedVehiclesByDir('E');
 
-                % Find unturned right-turners (before or past stop line).
-                % Past-stop-line turners are at turn_wait — they are included
-                % so that EstimateAllArrivalTimesIDM (fixed below) can assign
-                % them tau=dt_sim and the optimizer can compute a safe gap.
                 wTurner = [];
                 for i = 1:length(ids_W)
                     d = obj.GetVehicleData(ids_W(i));
@@ -740,40 +759,45 @@ classdef RSU<handle
                     end
                 end
 
-                % Re-optimize for W turner if it changed.
-                % Uses wTurnerID (not turningCarID) so the W and E checks
-                % don't overwrite each other and cause every-timestep re-runs.
-                if ~isempty(wTurner)
-                    alreadyOptimized = isfield(obj.opt_results,'EW') && ...
-                                       ~isempty(obj.opt_results.EW) && ...
-                                       isfield(obj.opt_results.EW,'wTurnerID') && ...
-                                       isequal(obj.opt_results.EW.wTurnerID, wTurner);
-                    if ~alreadyOptimized
-                        fprintf('\n[t=%.1f] W turner %d (new) - running EW optimization\n', t, wTurner);
-                        obj.OptimizeRightTurn_EW(wTurner, trafficLight);
-                        didRun = true;
-                    end
-                end
-
-                % Re-optimize for E turner if it changed.
-                if ~isempty(eTurner)
-                    alreadyOptimized = isfield(obj.opt_results,'EW') && ...
-                                       ~isempty(obj.opt_results.EW) && ...
-                                       isfield(obj.opt_results.EW,'eTurnerID') && ...
-                                       isequal(obj.opt_results.EW.eTurnerID, eTurner);
-                    if ~alreadyOptimized
-                        fprintf('\n[t=%.1f] E turner %d (new) - running EW_Reverse optimization\n', t, eTurner);
-                        obj.OptimizeRightTurn_EW_Reverse(eTurner, trafficLight);
-                        didRun = true;
-                    end
-                end
-
-                % If no turners remain, clear stale results
                 if isempty(wTurner) && isempty(eTurner)
                     obj.opt_results.EW = [];
+                    obj.opt_results.EW_rev = [];
+                    obj.last_opt_veh_ids.EW = cur_ids;
+                    return;
+                end
+
+                didRun = true;
+                obj.last_opt_veh_ids.EW = cur_ids;
+
+                if ~isempty(wTurner) && ~isempty(eTurner)
+                    % MUTUAL TURN: W→N and E→S don't conflict with each other,
+                    % but each still needs a gap in the opposing STRAIGHT traffic.
+                    % Run both optimizations into separate result structs so
+                    % they never overwrite each other.
+                    fprintf('\n[t=%.1f] MUTUAL TURN (EW): W(%d) vs E-straight  &  E(%d) vs W-straight\n', ...
+                        t, wTurner, eTurner);
+                    obj.OptimizeRightTurn_EW(wTurner, trafficLight);          % → opt_results.EW
+                    obj.OptimizeRightTurn_EW_Reverse(eTurner, trafficLight);  % → opt_results.EW_rev
+
+                elseif ~isempty(wTurner)
+                    % Case (a): W turner vs E straight
+                    fprintf('\n[t=%.1f] W turner %d — EW gap-slot optimization\n', t, wTurner);
+                    obj.OptimizeRightTurn_EW(wTurner, trafficLight);
+
+                else
+                    % Case (b): E turner vs W straight
+                    fprintf('\n[t=%.1f] E turner %d — EW_Reverse gap-slot optimization\n', t, eTurner);
+                    obj.OptimizeRightTurn_EW_Reverse(eTurner, trafficLight);
                 end
 
             elseif strcmp(greenDir, 'NS')
+                cur_ids = sort([obj.GetVehiclesWithinRadius(REOPT_RADIUS, 'N'), ...
+                                obj.GetVehiclesWithinRadius(REOPT_RADIUS, 'S')]);
+                hasResult = isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS);
+                if isequal(cur_ids, obj.last_opt_veh_ids.NS) && hasResult
+                    return;
+                end
+
                 [ids_N, ~] = obj.GetSortedVehiclesByDir('N');
                 [ids_S, ~] = obj.GetSortedVehiclesByDir('S');
 
@@ -792,53 +816,95 @@ classdef RSU<handle
                     end
                 end
 
-                if ~isempty(nTurner)
-                    alreadyOptimized = isfield(obj.opt_results,'NS') && ...
-                                       ~isempty(obj.opt_results.NS) && ...
-                                       isfield(obj.opt_results.NS,'nTurnerID') && ...
-                                       isequal(obj.opt_results.NS.nTurnerID, nTurner);
-                    if ~alreadyOptimized
-                        fprintf('\n[t=%.1f] N turner %d (new) - running NS optimization\n', t, nTurner);
-                        obj.OptimizeRightTurn_NS(nTurner, trafficLight);
-                        didRun = true;
-                    end
-                end
-
-                if ~isempty(sTurner)
-                    alreadyOptimized = isfield(obj.opt_results,'NS') && ...
-                                       ~isempty(obj.opt_results.NS) && ...
-                                       isfield(obj.opt_results.NS,'sTurnerID') && ...
-                                       isequal(obj.opt_results.NS.sTurnerID, sTurner);
-                    if ~alreadyOptimized
-                        fprintf('\n[t=%.1f] S turner %d (new) - running NS_Reverse optimization\n', t, sTurner);
-                        obj.OptimizeRightTurn_NS_Reverse(sTurner, trafficLight);
-                        didRun = true;
-                    end
-                end
-
                 if isempty(nTurner) && isempty(sTurner)
                     obj.opt_results.NS = [];
+                    obj.opt_results.NS_rev = [];
+                    obj.last_opt_veh_ids.NS = cur_ids;
+                    return;
+                end
+
+                didRun = true;
+                obj.last_opt_veh_ids.NS = cur_ids;
+
+                if ~isempty(nTurner) && ~isempty(sTurner)
+                    fprintf('\n[t=%.1f] MUTUAL TURN (NS): N(%d) vs S-straight  &  S(%d) vs N-straight\n', ...
+                        t, nTurner, sTurner);
+                    obj.OptimizeRightTurn_NS(nTurner, trafficLight);
+                    obj.OptimizeRightTurn_NS_Reverse(sTurner, trafficLight);
+
+                elseif ~isempty(nTurner)
+                    fprintf('\n[t=%.1f] N turner %d — NS gap-slot optimization\n', t, nTurner);
+                    obj.OptimizeRightTurn_NS(nTurner, trafficLight);
+
+                else
+                    fprintf('\n[t=%.1f] S turner %d — NS_Reverse gap-slot optimization\n', t, sTurner);
+                    obj.OptimizeRightTurn_NS_Reverse(sTurner, trafficLight);
+                end
+            end
+        end
+
+        %% Get IDs of active vehicles within [radius] metres of intersection
+        function ids = GetVehiclesWithinRadius(obj, radius, dir)
+            ids = [];
+            veh_ids = obj.active_vehicles.(dir);
+            for i = 1:length(veh_ids)
+                data = obj.GetVehicleData(veh_ids(i));
+                if isempty(data), continue; end
+                switch dir
+                    case {'N','S'}, dist = abs(data.Y);
+                    case {'E','W'}, dist = abs(data.X);
+                    otherwise, continue;
+                end
+                if dist <= radius
+                    ids(end+1) = veh_ids(i);
                 end
             end
         end
 
         function tau = GetCoordinatedArrivalTime(obj, vehicleID, dir)
+            % Returns the most conservative (latest) coordinated arrival time
+            % across all applicable optimization results:
+            %   EW     = W-turner result (affects W turners and E straight vehicles)
+            %   EW_rev = E-turner result (affects E turners and W straight vehicles)
+            %   NS     = N-turner result; NS_rev = S-turner result
+            % Taking the MAX ensures all gap-safety constraints are satisfied
+            % when both sides have right-turners (mutual-turn phase).
             tau = NaN;
-            if isfield(obj.opt_results, 'EW') && ~isempty(obj.opt_results.EW)
-                res = obj.opt_results.EW;
-                if strcmp(dir,'E') && isfield(res,'ids_E')
-                    idx=find(res.ids_E==vehicleID); if ~isempty(idx), tau=res.tau_E(idx); return; end
-                elseif strcmp(dir,'W') && isfield(res,'ids_W')
-                    idx=find(res.ids_W==vehicleID); if ~isempty(idx), tau=res.tau_W(idx); return; end
+            candidates = @(res, fId, fTau) ...
+                deal(isfield(res,fId) && ~isempty(res.(fId)), ...
+                     isfield(res,fTau) && ~isempty(res.(fTau)));
+
+            function tau = pickMax(tau, res, idsField, tauField)
+                if isfield(res, idsField) && isfield(res, tauField)
+                    idx = find(res.(idsField) == vehicleID);
+                    if ~isempty(idx)
+                        val = res.(tauField)(idx);
+                        if isnan(tau) || val > tau
+                            tau = val;
+                        end
+                    end
                 end
             end
-            if isfield(obj.opt_results, 'NS') && ~isempty(obj.opt_results.NS)
+
+            if isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW)
+                res = obj.opt_results.EW;
+                if strcmp(dir,'E'), tau = pickMax(tau, res, 'ids_E', 'tau_E'); end
+                if strcmp(dir,'W'), tau = pickMax(tau, res, 'ids_W', 'tau_W'); end
+            end
+            if isfield(obj.opt_results,'EW_rev') && ~isempty(obj.opt_results.EW_rev)
+                res = obj.opt_results.EW_rev;
+                if strcmp(dir,'E'), tau = pickMax(tau, res, 'ids_E', 'tau_E'); end
+                if strcmp(dir,'W'), tau = pickMax(tau, res, 'ids_W', 'tau_W'); end
+            end
+            if isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS)
                 res = obj.opt_results.NS;
-                if strcmp(dir,'N') && isfield(res,'ids_N')
-                    idx=find(res.ids_N==vehicleID); if ~isempty(idx), tau=res.tau_N(idx); return; end
-                elseif strcmp(dir,'S') && isfield(res,'ids_S')
-                    idx=find(res.ids_S==vehicleID); if ~isempty(idx), tau=res.tau_S(idx); return; end
-                end
+                if strcmp(dir,'N'), tau = pickMax(tau, res, 'ids_N', 'tau_N'); end
+                if strcmp(dir,'S'), tau = pickMax(tau, res, 'ids_S', 'tau_S'); end
+            end
+            if isfield(obj.opt_results,'NS_rev') && ~isempty(obj.opt_results.NS_rev)
+                res = obj.opt_results.NS_rev;
+                if strcmp(dir,'N'), tau = pickMax(tau, res, 'ids_N', 'tau_N'); end
+                if strcmp(dir,'S'), tau = pickMax(tau, res, 'ids_S', 'tau_S'); end
             end
         end
 
@@ -889,66 +955,74 @@ classdef RSU<handle
 
             % ── Helper: register this car in opt_results so the loop stops ──
             function registerTurnerID()
-                if strcmp(dir,'E') || strcmp(dir,'W')
+                if strcmp(dir,'W')
                     if ~isfield(obj.opt_results,'EW') || isempty(obj.opt_results.EW)
                         obj.opt_results.EW = struct();
                     end
-                    if strcmp(dir,'W'), obj.opt_results.EW.wTurnerID = vehicleID;
-                    else,               obj.opt_results.EW.eTurnerID = vehicleID; end
-                else
+                    obj.opt_results.EW.wTurnerID = vehicleID;
+                elseif strcmp(dir,'E')
+                    if ~isfield(obj.opt_results,'EW_rev') || isempty(obj.opt_results.EW_rev)
+                        obj.opt_results.EW_rev = struct();
+                    end
+                    obj.opt_results.EW_rev.eTurnerID = vehicleID;
+                elseif strcmp(dir,'N')
                     if ~isfield(obj.opt_results,'NS') || isempty(obj.opt_results.NS)
                         obj.opt_results.NS = struct();
                     end
-                    if strcmp(dir,'N'), obj.opt_results.NS.nTurnerID = vehicleID;
-                    else,               obj.opt_results.NS.sTurnerID = vehicleID; end
+                    obj.opt_results.NS.nTurnerID = vehicleID;
+                elseif strcmp(dir,'S')
+                    if ~isfield(obj.opt_results,'NS_rev') || isempty(obj.opt_results.NS_rev)
+                        obj.opt_results.NS_rev = struct();
+                    end
+                    obj.opt_results.NS_rev.sTurnerID = vehicleID;
                 end
             end
 
             % ============================================================
-            % STEP 1: MUTUAL RIGHT-TURN — both proceed unconditionally
+            % STEP 1: MUTUAL RIGHT-TURN — note only, then fall through
             % ============================================================
-            % W→N and E→S (or N→E and S→W) go into different quadrants.
-            % There is zero physical conflict between them.
-            % No gap check needed — just proceed and register IDs so the loop stops.
+            % W→N and E→S go into different quadrants — no conflict between
+            % the two turners. But each still needs a gap in the opposing
+            % STRAIGHT traffic. RunGreenPhaseOptimization handles this by
+            % running BOTH EW (W vs E-straight) and EW_rev (E vs W-straight).
+            % We simply note the pair once and fall through to Step 3 so the
+            % coordinated arrival time governs turn_signal as usual.
             if ~isempty(oppDir)
                 opposingTurner = obj.FindFirstRightTurner(oppDir);
                 if ~isempty(opposingTurner)
-                    % Only print on FIRST detection of this specific pair.
-                    % Without this guard the message fires every timestep until
-                    % the car physically completes the turn — which may take many
-                    % steps if the spawn point is temporarily blocked by queued cars.
-                    alreadyKnown = false;
-                    if strcmp(dir,'E') || strcmp(dir,'W')
-                        if isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW)
-                            if strcmp(dir,'W')
-                                alreadyKnown = isfield(obj.opt_results.EW,'wTurnerID') && ...
-                                              isequal(obj.opt_results.EW.wTurnerID, vehicleID);
-                            else
-                                alreadyKnown = isfield(obj.opt_results.EW,'eTurnerID') && ...
-                                              isequal(obj.opt_results.EW.eTurnerID, vehicleID);
-                            end
+                    frontmostSelf = obj.FindFirstRightTurner(dir);
+                    isFrontmost = ~isempty(frontmostSelf) && frontmostSelf == vehicleID;
+                    if isFrontmost
+                        % Suppress repeat prints
+                        alreadyKnown = false;
+                        if strcmp(dir,'W')
+                            alreadyKnown = isfield(obj.opt_results,'EW') && ...
+                                ~isempty(obj.opt_results.EW) && ...
+                                isfield(obj.opt_results.EW,'wTurnerID') && ...
+                                isequal(obj.opt_results.EW.wTurnerID, vehicleID);
+                        elseif strcmp(dir,'E')
+                            alreadyKnown = isfield(obj.opt_results,'EW_rev') && ...
+                                ~isempty(obj.opt_results.EW_rev) && ...
+                                isfield(obj.opt_results.EW_rev,'eTurnerID') && ...
+                                isequal(obj.opt_results.EW_rev.eTurnerID, vehicleID);
+                        elseif strcmp(dir,'N')
+                            alreadyKnown = isfield(obj.opt_results,'NS') && ...
+                                ~isempty(obj.opt_results.NS) && ...
+                                isfield(obj.opt_results.NS,'nTurnerID') && ...
+                                isequal(obj.opt_results.NS.nTurnerID, vehicleID);
+                        elseif strcmp(dir,'S')
+                            alreadyKnown = isfield(obj.opt_results,'NS_rev') && ...
+                                ~isempty(obj.opt_results.NS_rev) && ...
+                                isfield(obj.opt_results.NS_rev,'sTurnerID') && ...
+                                isequal(obj.opt_results.NS_rev.sTurnerID, vehicleID);
                         end
-                    else
-                        if isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS)
-                            if strcmp(dir,'N')
-                                alreadyKnown = isfield(obj.opt_results.NS,'nTurnerID') && ...
-                                              isequal(obj.opt_results.NS.nTurnerID, vehicleID);
-                            else
-                                alreadyKnown = isfield(obj.opt_results.NS,'sTurnerID') && ...
-                                              isequal(obj.opt_results.NS.sTurnerID, vehicleID);
-                            end
+                        if ~alreadyKnown
+                            fprintf('[t=%.1f] MUTUAL RIGHT-TURN noted: %s(%d) & %s(%d)\n', ...
+                                t, dir, vehicleID, oppDir, opposingTurner);
                         end
+                        % No early return — fall through to Step 3 for
+                        % proper coordinated gap-slot timing.
                     end
-                    if ~alreadyKnown
-                        fprintf('[t=%.1f] MUTUAL RIGHT-TURN: %s(%d) & %s(%d) - BOTH PROCEED\n', ...
-                            t, dir, vehicleID, oppDir, opposingTurner);
-                    end
-                    registerTurnerID();
-                    turn_signal = 1;
-                    vpos = struct('vehicle_id',vehicleID,'direction',dir,...
-                                  'action','mutual_turn','recommended_V',3.0,...
-                                  'coordinated_tau',0);
-                    return;
                 end
             end
 
@@ -993,54 +1067,71 @@ classdef RSU<handle
             % ============================================================
             tau = NaN;
 
-            if strcmp(dir, 'E') || strcmp(dir, 'W')
-                hasValidOpt = isfield(obj.opt_results, 'EW') && ~isempty(obj.opt_results.EW);
+            if strcmp(dir, 'W')
+                % W turner: gap-slot result lives in opt_results.EW
+                hasValidOpt = isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW) && ...
+                              isfield(obj.opt_results.EW,'opt_p');
                 if hasValidOpt
-                    if strcmp(dir, 'W')
-                        if ~isfield(obj.opt_results.EW,'wTurnerID') || ...
-                           ~isequal(obj.opt_results.EW.wTurnerID, vehicleID)
-                            % Different W turner holds the slot — queue behind it
-                            vpos = struct('vehicle_id',vehicleID,'direction',dir,...
-                                         'action','queue_wait','recommended_V',NaN,'coordinated_tau',NaN);
-                            turn_signal = -1; return;
-                        end
-                    else
-                        if ~isfield(obj.opt_results.EW,'eTurnerID') || ...
-                           ~isequal(obj.opt_results.EW.eTurnerID, vehicleID)
-                            vpos = struct('vehicle_id',vehicleID,'direction',dir,...
-                                         'action','queue_wait','recommended_V',NaN,'coordinated_tau',NaN);
-                            turn_signal = -1; return;
-                        end
+                    if ~isfield(obj.opt_results.EW,'wTurnerID') || ...
+                       ~isequal(obj.opt_results.EW.wTurnerID, vehicleID)
+                        vpos = struct('vehicle_id',vehicleID,'direction',dir,...
+                                     'action','queue_wait','recommended_V',NaN,'coordinated_tau',NaN);
+                        turn_signal = -1; return;
                     end
                 end
                 if ~hasValidOpt
-                    if strcmp(dir,'W'), obj.OptimizeRightTurn_EW(vehicleID, TrafficLight);
-                    else,               obj.OptimizeRightTurn_EW_Reverse(vehicleID, TrafficLight); end
+                    obj.OptimizeRightTurn_EW(vehicleID, TrafficLight);
                 end
                 tau = obj.GetCoordinatedArrivalTime(vehicleID, dir);
 
-            else  % N or S
-                hasValidOpt = isfield(obj.opt_results, 'NS') && ~isempty(obj.opt_results.NS);
+            elseif strcmp(dir, 'E')
+                % E turner: gap-slot result lives in opt_results.EW_rev
+                hasValidOpt = isfield(obj.opt_results,'EW_rev') && ~isempty(obj.opt_results.EW_rev) && ...
+                              isfield(obj.opt_results.EW_rev,'opt_p');
                 if hasValidOpt
-                    if strcmp(dir, 'N')
-                        if ~isfield(obj.opt_results.NS,'nTurnerID') || ...
-                           ~isequal(obj.opt_results.NS.nTurnerID, vehicleID)
-                            vpos = struct('vehicle_id',vehicleID,'direction',dir,...
-                                         'action','queue_wait','recommended_V',NaN,'coordinated_tau',NaN);
-                            turn_signal = -1; return;
-                        end
-                    else
-                        if ~isfield(obj.opt_results.NS,'sTurnerID') || ...
-                           ~isequal(obj.opt_results.NS.sTurnerID, vehicleID)
-                            vpos = struct('vehicle_id',vehicleID,'direction',dir,...
-                                         'action','queue_wait','recommended_V',NaN,'coordinated_tau',NaN);
-                            turn_signal = -1; return;
-                        end
+                    if ~isfield(obj.opt_results.EW_rev,'eTurnerID') || ...
+                       ~isequal(obj.opt_results.EW_rev.eTurnerID, vehicleID)
+                        vpos = struct('vehicle_id',vehicleID,'direction',dir,...
+                                     'action','queue_wait','recommended_V',NaN,'coordinated_tau',NaN);
+                        turn_signal = -1; return;
                     end
                 end
                 if ~hasValidOpt
-                    if strcmp(dir,'N'), obj.OptimizeRightTurn_NS(vehicleID, TrafficLight);
-                    else,               obj.OptimizeRightTurn_NS_Reverse(vehicleID, TrafficLight); end
+                    obj.OptimizeRightTurn_EW_Reverse(vehicleID, TrafficLight);
+                end
+                tau = obj.GetCoordinatedArrivalTime(vehicleID, dir);
+
+            elseif strcmp(dir, 'N')
+                % N turner: gap-slot result lives in opt_results.NS
+                hasValidOpt = isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS) && ...
+                              isfield(obj.opt_results.NS,'opt_p');
+                if hasValidOpt
+                    if ~isfield(obj.opt_results.NS,'nTurnerID') || ...
+                       ~isequal(obj.opt_results.NS.nTurnerID, vehicleID)
+                        vpos = struct('vehicle_id',vehicleID,'direction',dir,...
+                                     'action','queue_wait','recommended_V',NaN,'coordinated_tau',NaN);
+                        turn_signal = -1; return;
+                    end
+                end
+                if ~hasValidOpt
+                    obj.OptimizeRightTurn_NS(vehicleID, TrafficLight);
+                end
+                tau = obj.GetCoordinatedArrivalTime(vehicleID, dir);
+
+            else  % S
+                % S turner: gap-slot result lives in opt_results.NS_rev
+                hasValidOpt = isfield(obj.opt_results,'NS_rev') && ~isempty(obj.opt_results.NS_rev) && ...
+                              isfield(obj.opt_results.NS_rev,'opt_p');
+                if hasValidOpt
+                    if ~isfield(obj.opt_results.NS_rev,'sTurnerID') || ...
+                       ~isequal(obj.opt_results.NS_rev.sTurnerID, vehicleID)
+                        vpos = struct('vehicle_id',vehicleID,'direction',dir,...
+                                     'action','queue_wait','recommended_V',NaN,'coordinated_tau',NaN);
+                        turn_signal = -1; return;
+                    end
+                end
+                if ~hasValidOpt
+                    obj.OptimizeRightTurn_NS_Reverse(vehicleID, TrafficLight);
                 end
                 tau = obj.GetCoordinatedArrivalTime(vehicleID, dir);
             end
@@ -1194,24 +1285,30 @@ classdef RSU<handle
             dirs = {'N','S','E','W'};
             for d=1:4, fprintf('%s:%d ', dirs{d}, length(obj.active_vehicles.(dirs{d}))); end
             fprintf('\n');
-            if isfield(obj.opt_results,'EW') && ~isempty(obj.opt_results.EW)
-                if isfield(obj.opt_results.EW,'opt_p') && isfield(obj.opt_results.EW,'min_cost')
-                    fprintf('EW: p=%d cost=%.2f\n', obj.opt_results.EW.opt_p, obj.opt_results.EW.min_cost);
-                else
-                    fprintf('EW: (mutual/at-line mode)\n');
-                end
-            end
-            if isfield(obj.opt_results,'NS') && ~isempty(obj.opt_results.NS)
-                if isfield(obj.opt_results.NS,'opt_p') && isfield(obj.opt_results.NS,'min_cost')
-                    fprintf('NS: p=%d cost=%.2f\n', obj.opt_results.NS.opt_p, obj.opt_results.NS.min_cost);
-                else
-                    fprintf('NS: (mutual/at-line mode)\n');
+            for dpCell = {'EW','EW_rev','NS','NS_rev'}
+                dp = dpCell{1};
+                if isfield(obj.opt_results, dp) && ~isempty(obj.opt_results.(dp))
+                    res = obj.opt_results.(dp);
+                    if isfield(res,'opt_p') && isfield(res,'min_cost')
+                        fprintf('%s: p*=%d cost=%.2f\n', dp, res.opt_p, res.min_cost);
+                    else
+                        fprintf('%s: (ID-only)\n', dp);
+                    end
                 end
             end
         end
 
         function PrintArrivalTimes(obj, trafficLight)
             fprintf('\n=== Arrival Times ===\n');
+            for dpCell = {'EW','EW_rev','NS','NS_rev'}
+                dp = dpCell{1};
+                if isfield(obj.opt_results, dp) && ~isempty(obj.opt_results.(dp))
+                    res = obj.opt_results.(dp);
+                    if isfield(res,'opt_p') && isfield(res,'min_cost')
+                        fprintf('[%s] p*=%d  cost=%.2f\n', dp, res.opt_p, res.min_cost);
+                    end
+                end
+            end
             dirs = {'N','S','E','W'};
             for d=1:4
                 dir=dirs{d};
