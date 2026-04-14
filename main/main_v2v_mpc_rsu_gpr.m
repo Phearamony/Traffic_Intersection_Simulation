@@ -1,6 +1,4 @@
-%% 4-Way Intersection Simulation — V2V IDM + RSU
-% Mirrors main_v2v_mpc_rsu.m structure exactly;
-% uses IDM vehicle dynamics instead of IDM.
+%% 4-Way Intersection Simulation — V2V MPC + RSU (GPR arrival model)
 % IMPORTANT: 'clear classes' forces MATLAB to reload handle classes (Car, RSU)
 % from disk. Without this, MATLAB uses the in-memory compiled version and will
 % NOT pick up any edits made to Car.m or RSU.m since the last run.
@@ -65,6 +63,14 @@ CarIDW = 4000;
 global RSUObjs
 RSU1 = RSU(1, 0, 0);
 RSUObjs = [RSU1];
+% --- Load GPR arrival-time model ---
+% Trained by main_human_driving_gpr_train.m
+gpr_model_path = fullfile(fileparts(mfilename('fullpath')), '..', 'simplot', 'gpr_arrival_model.mat');
+if ~exist(gpr_model_path, 'file')
+    error('GPR model not found. Run main_human_driving_gpr_train.m first.');
+end
+RSU1.LoadGPRModel(gpr_model_path);
+
 
 % Track previous traffic light state for green phase detection
 prev_TrafficLight = struct('NS', 'red', 'EW', 'red');
@@ -314,7 +320,7 @@ for KK = 1:KKmax
     % for i = 1:length(CarN)
     %     % CarN(i).Lpos = i;
     %     if i > 1
-    %         CarN(i).Ac = CarN(i).IDM(CarN(i), CarN(i-1));
+    %         CarN(i).Ac = CarN(i).MPC(CarN(i), CarN(i-1));
     %     else
     %         CarN(i).Ac = 0.5 * (CarN(i).Vd - CarN(i).V);
     %     end
@@ -324,7 +330,7 @@ for KK = 1:KKmax
     % for i = 1:length(CarS)
     %     % CarS(i).Lpos = i;
     %     if i > 1
-    %         CarS(i).Ac = CarS(i).IDM(CarS(i), CarS(i-1));
+    %         CarS(i).Ac = CarS(i).MPC(CarS(i), CarS(i-1));
     %     else
     %         CarS(i).Ac = 0.5 * (CarS(i).Vd - CarS(i).V);
     %     end
@@ -334,7 +340,7 @@ for KK = 1:KKmax
     % for i = 1:length(CarE)
     %     % CarE(i).Lpos = i;
     %     if i > 1
-    %         CarE(i).Ac = CarE(i).IDM(CarE(i), CarE(i-1));
+    %         CarE(i).Ac = CarE(i).MPC(CarE(i), CarE(i-1));
     %     else
     %         CarE(i).Ac = 0.5 * (CarE(i).Vd - CarE(i).V);
     %     end
@@ -344,7 +350,7 @@ for KK = 1:KKmax
     % for i = 1:length(CarW)
     %     % CarW(i).Lpos = i;
     %     if i > 1
-    %         CarW(i).Ac = CarW(i).IDM(CarW(i), CarW(i-1));
+    %         CarW(i).Ac = CarW(i).MPC(CarW(i), CarW(i-1));
     %     else
     %         CarW(i).Ac = 0.5 * (CarW(i).Vd - CarW(i).V);
     %     end
@@ -363,6 +369,12 @@ for KK = 1:KKmax
     dummyE = Car(-1, 0, 0); dummyE.Dir = 'E'; dummyE.V = 0;
     dummyW = Car(-1, 0, 0); dummyW.Dir = 'W'; dummyW.V = 0;
 
+    % Virtual free-driving lead: placed 200 m ahead at desired speed.
+    % Using MPC with a far-away lead (Fix 4) keeps the free-driving
+    % acceleration produced by the same QP as car-following, rather than
+    % a separate proportional gain (0.5*(Vd-V)) that produces a different
+    % profile and inflates inter-configuration variance.
+    freeDriveLead = Car(-2, 0, 0); freeDriveLead.V = 0; % position set below
 
     % Lead-car cache for each direction (Fix 8).
     % The MPC blocks below populate these; the collision prevention block
@@ -396,17 +408,20 @@ for KK = 1:KKmax
         if isRedOrYellow && isBeforeStopLine
             % Red/Yellow: stop at the line (or follow queue)
             if ~isempty(leadCar) && leadCar.Y < -stop_line + car.R0
-                car.Ac = car.IDM(car, leadCar);
+                car.Ac = car.MPC(car, leadCar);
             else
                 dummyN.Y = -stop_line + car.R0;
-                car.Ac = car.IDM(car, dummyN);
+                car.Ac = car.MPC(car, dummyN);
             end
         else
             % Green or past stop line: follow lead or free-drive via MPC
             if ~isempty(leadCar)
-                car.Ac = car.IDM(car, leadCar);
+                car.Ac = car.MPC(car, leadCar);
             else
-                car.Ac = 0.5*(car.Vd - car.V);
+                freeDriveLead.Dir = 'N';
+                freeDriveLead.Y   = car.Y + 200;
+                freeDriveLead.V   = car.Vd;
+                car.Ac = car.MPC(car, freeDriveLead);
             end
         end
         CarN(i) = car;
@@ -434,16 +449,19 @@ for KK = 1:KKmax
 
         if isRedOrYellow && isBeforeStopLine
             if ~isempty(leadCar) && leadCar.Y > stop_line - car.R0
-                car.Ac = car.IDM(car, leadCar);
+                car.Ac = car.MPC(car, leadCar);
             else
                 dummyS.Y = stop_line - car.R0;
-                car.Ac = car.IDM(car, dummyS);
+                car.Ac = car.MPC(car, dummyS);
             end
         else
             if ~isempty(leadCar)
-                car.Ac = car.IDM(car, leadCar);
+                car.Ac = car.MPC(car, leadCar);
             else
-                car.Ac = 0.5*(car.Vd - car.V);
+                freeDriveLead.Dir = 'S';
+                freeDriveLead.Y   = car.Y - 200;
+                freeDriveLead.V   = car.Vd;
+                car.Ac = car.MPC(car, freeDriveLead);
             end
         end
         leadCarS{i} = leadCar;   % cache for collision prevention (Fix 8)
@@ -472,16 +490,19 @@ for KK = 1:KKmax
 
         if isRedOrYellow && isBeforeStopLine
             if ~isempty(leadCar) && leadCar.X < -stop_line + car.R0
-                car.Ac = car.IDM(car, leadCar);
+                car.Ac = car.MPC(car, leadCar);
             else
                 dummyE.X = -stop_line + car.R0;
-                car.Ac = car.IDM(car, dummyE);
+                car.Ac = car.MPC(car, dummyE);
             end
         else
             if ~isempty(leadCar)
-                car.Ac = car.IDM(car, leadCar);
+                car.Ac = car.MPC(car, leadCar);
             else
-                car.Ac = 0.5*(car.Vd - car.V);
+                freeDriveLead.Dir = 'E';
+                freeDriveLead.X   = car.X + 200;
+                freeDriveLead.V   = car.Vd;
+                car.Ac = car.MPC(car, freeDriveLead);
             end
         end
 
@@ -510,16 +531,19 @@ for KK = 1:KKmax
 
         if isRedOrYellow && isBeforeStopLine
             if ~isempty(leadCar) && leadCar.X > stop_line - car.R0
-                car.Ac = car.IDM(car, leadCar);
+                car.Ac = car.MPC(car, leadCar);
             else
                 dummyW.X = stop_line - car.R0;
-                car.Ac = car.IDM(car, dummyW);
+                car.Ac = car.MPC(car, dummyW);
             end
         else
             if ~isempty(leadCar)
-                car.Ac = car.IDM(car, leadCar);
+                car.Ac = car.MPC(car, leadCar);
             else
-                car.Ac = 0.5*(car.Vd - car.V);
+                freeDriveLead.Dir = 'W';
+                freeDriveLead.X   = car.X - 200;
+                freeDriveLead.V   = car.Vd;
+                car.Ac = car.MPC(car, freeDriveLead);
             end
         end
         leadCarW{i} = leadCar;   % cache for collision prevention (Fix 8)
@@ -698,7 +722,7 @@ for KK = 1:KKmax
                 % Check if car ahead (i-1) is also a left-turner not yet turned
                 if i > 1 && CarW(i-1).TurnLeft == 1 && CarW(i-1).TurnedLeft == 0
                     % Follow the car ahead
-                    car.Ac = car.IDM(car, CarW(i-1));
+                    car.Ac = car.MPC(car, CarW(i-1));
                 elseif car.V > 2.0 % Only use dummy if car is moving fast
                     % No left-turner ahead, use dummy
                     if ~used_dummyW_left
@@ -706,7 +730,7 @@ for KK = 1:KKmax
                         dummy.X = turn_release - car.R0;
                         dummy.Y = car.Y;
                         dummy.V = 0;
-                        car.Ac = car.IDM(car, dummy);
+                        car.Ac = car.MPC(car, dummy);
                         used_dummyW_left = true;
                     end
                 end
@@ -752,7 +776,7 @@ for KK = 1:KKmax
                 % Check if car ahead (i-1) is also a left-turner not yet turned
                 if i > 1 && CarE(i-1).TurnLeft == 1 && CarE(i-1).TurnedLeft == 0
                     % Follow the car ahead
-                    car.Ac = car.IDM(car, CarE(i-1));
+                    car.Ac = car.MPC(car, CarE(i-1));
                 elseif car.V > 2.0 % Only use dummy if car is moving fast
                     % No left-turner ahead, use dummy
                     if ~used_dummyE_left
@@ -760,7 +784,7 @@ for KK = 1:KKmax
                         dummy.X = -turn_release + car.R0;
                         dummy.Y = car.Y;
                         dummy.V = 0;
-                        car.Ac = car.IDM(car, dummy);
+                        car.Ac = car.MPC(car, dummy);
                         used_dummyE_left = true;
                     end
                 end
@@ -805,7 +829,7 @@ for KK = 1:KKmax
                 % Check if car ahead (i-1) is also a left-turner not yet turned
                 if i > 1 && CarS(i-1).TurnLeft == 1 && CarS(i-1).TurnedLeft == 0
                     % Follow the car ahead
-                    car.Ac = car.IDM(car, CarS(i-1));
+                    car.Ac = car.MPC(car, CarS(i-1));
                 elseif car.V > 2.0 % Only use dummy if car is moving fast
                     % No left-turner ahead, use dummy
                     if ~used_dummyS_left
@@ -813,7 +837,7 @@ for KK = 1:KKmax
                         dummy.X = car.X;
                         dummy.Y = turn_release - car.R0;
                         dummy.V = 0;
-                        car.Ac = car.IDM(car, dummy);
+                        car.Ac = car.MPC(car, dummy);
                         used_dummyS_left = true;
                     end
                 end
@@ -858,7 +882,7 @@ for KK = 1:KKmax
                 % Check if car ahead (i-1) is also a left-turner not yet turned
                 if i > 1 && CarN(i-1).TurnLeft == 1 && CarN(i-1).TurnedLeft == 0
                     % Follow the car ahead
-                    car.Ac = car.IDM(car, CarN(i-1));
+                    car.Ac = car.MPC(car, CarN(i-1));
                 elseif car.V > 2.0 % Only use dummy if car is moving fast
                     % No left-turner ahead, use dummy
                     if ~used_dummyN_left
@@ -866,7 +890,7 @@ for KK = 1:KKmax
                         dummy.X = car.X;
                         dummy.Y = -turn_release + car.R0;
                         dummy.V = 0;
-                        car.Ac = car.IDM(car, dummy);
+                        car.Ac = car.MPC(car, dummy);
                         used_dummyN_left = true;
                     end
                 end
@@ -911,7 +935,7 @@ for KK = 1:KKmax
             % Approaching turn zone - slow down
             if car.X > turn_wait && car.X <= turn_start
                 if i > 1 && CarW(i-1).TurnRight == 1 && CarW(i-1).TurnedRight == 0
-                    car.Ac = car.IDM(car, CarW(i-1));
+                    car.Ac = car.MPC(car, CarW(i-1));
                 elseif car.V > 2.0
                     if ~used_dummyW_right
                         dummy = Car(-1, 0, 0);
@@ -919,7 +943,7 @@ for KK = 1:KKmax
                         dummy.Y = car.Y;
                         dummy.V = 0;
                         dummy.Dir = 'W';
-                        car.Ac = car.IDM(car, dummy);
+                        car.Ac = car.MPC(car, dummy);
                         used_dummyW_right = true;
                     end
                 end
@@ -988,7 +1012,7 @@ for KK = 1:KKmax
             % Approaching turn zone - slow down
             if car.X < -turn_wait && car.X >= -turn_start
                 if i > 1 && CarE(i-1).TurnRight == 1 && CarE(i-1).TurnedRight == 0
-                    car.Ac = car.IDM(car, CarE(i-1));
+                    car.Ac = car.MPC(car, CarE(i-1));
                 elseif car.V > 2.0
                     if ~used_dummyE_right
                         dummy = Car(-1, 0, 0);
@@ -996,7 +1020,7 @@ for KK = 1:KKmax
                         dummy.Y = car.Y;
                         dummy.V = 0;
                         dummy.Dir = 'E';
-                        car.Ac = car.IDM(car, dummy);
+                        car.Ac = car.MPC(car, dummy);
                         used_dummyE_right = true;
                     end
                 end
@@ -1059,7 +1083,7 @@ for KK = 1:KKmax
             % Approaching turn zone - slow down
             if car.Y > turn_wait && car.Y <= turn_start
                 if i > 1 && CarS(i-1).TurnRight == 1 && CarS(i-1).TurnedRight == 0
-                    car.Ac = car.IDM(car, CarS(i-1));
+                    car.Ac = car.MPC(car, CarS(i-1));
                 elseif car.V > 2.0
                     if ~used_dummyS_right
                         dummy = Car(-1, 0, 0);
@@ -1067,7 +1091,7 @@ for KK = 1:KKmax
                         dummy.X = car.X;
                         dummy.V = 0;
                         dummy.Dir = 'S';
-                        car.Ac = car.IDM(car, dummy);
+                        car.Ac = car.MPC(car, dummy);
                         used_dummyS_right = true;
                     end
                 end
@@ -1130,7 +1154,7 @@ for KK = 1:KKmax
             % Approaching turn zone - slow down
             if car.Y < -turn_wait && car.Y >= -turn_start
                 if i > 1 && CarN(i-1).TurnRight == 1 && CarN(i-1).TurnedRight == 0
-                    car.Ac = car.IDM(car, CarN(i-1));
+                    car.Ac = car.MPC(car, CarN(i-1));
                 elseif car.V > 2.0
                     if ~used_dummyN_right
                         dummy = Car(-1, 0, 0);
@@ -1138,7 +1162,7 @@ for KK = 1:KKmax
                         dummy.X = car.X;
                         dummy.V = 0;
                         dummy.Dir = 'N';
-                        car.Ac = car.IDM(car, dummy);
+                        car.Ac = car.MPC(car, dummy);
                         used_dummyN_right = true;
                     end
                 end
@@ -1599,8 +1623,8 @@ fprintf('=====================================\n');
 
 
 %% === Plot ===
-plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_mpc_rsu.png');
-plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_mpc_rsu.png');
+plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_mpc_rsu_gpr.png');
+plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_mpc_rsu_gpr.png');
 
 % Collect fuel stats from cars still on grid at end of simulation
 for idx = 1:length(CarN), FuelLog(end+1) = fuelEntry(CarN(idx)); end
@@ -1610,8 +1634,8 @@ for idx = 1:length(CarW), FuelLog(end+1) = fuelEntry(CarW(idx)); end
 
 % Plot fuel consumption & idle analysis
 out_base = fileparts(mfilename('fullpath'));
-fuel_out = fullfile(out_base, '..', 'output', 'fuel_idm_rsu.png');
-plot_fuel_consumption(FuelLog, 'V2X + IDM + RSU', fuel_out);
+fuel_out = fullfile(out_base, '..', 'output', 'fuel_mpc_rsu_gpr.png');
+plot_fuel_consumption(FuelLog, 'V2X + MPC + RSU (GPR)', fuel_out);
 
 
 %% === Helper Functions ===

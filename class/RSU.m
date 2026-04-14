@@ -43,6 +43,10 @@ classdef RSU<handle
         % Tracks which vehicles were within REOPT_RADIUS at the last
         % optimization run, used to detect new arrivals (50-m trigger).
         last_opt_veh_ids = struct('EW', [], 'NS', []);
+
+        % GPR arrival-time model (replaces IDM forward simulation when loaded)
+        gpr_model = [];
+        use_gpr   = false;
     end
 
     methods
@@ -514,14 +518,90 @@ classdef RSU<handle
             taus = taus2;
         end
 
+        %% Dispatcher: uses GPR if loaded, otherwise IDM
+        function [ids, taus] = EstimateArrivalTimes(obj, dir, trafficLight)
+            if obj.use_gpr && ~isempty(obj.gpr_model)
+                [ids, taus] = obj.EstimateAllArrivalTimesGPR(dir, trafficLight);
+            else
+                [ids, taus] = obj.EstimateAllArrivalTimesIDM(dir, trafficLight);
+            end
+        end
+
+        %% Load a trained GPR model from file
+        function LoadGPRModel(obj, model_path)
+            if ~exist(model_path, 'file')
+                error('RSU.LoadGPRModel: file not found: %s', model_path);
+            end
+            S = load(model_path, 'gpr_model');
+            obj.gpr_model = S.gpr_model;
+            obj.use_gpr   = true;
+            fprintf('[RSU %d] GPR model loaded from %s\n', obj.ID, model_path);
+        end
+
+        %% GPR-based arrival time estimation
+        % Replaces the IDM joint-queue simulation with a learned model:
+        %   inputs  : [dist_to_stop_line (m),  current_velocity (m/s)]
+        %   output  : predicted arrival time tau (s)
+        function [ids, taus] = EstimateAllArrivalTimesGPR(obj, dir, trafficLight)
+            [sorted_ids, ~] = obj.GetSortedVehiclesByDir(dir);
+            n = length(sorted_ids);
+            if n == 0, ids = []; taus = []; return; end
+
+            ids2  = [];
+            taus2 = [];
+
+            for i = 1:n
+                d = obj.GetVehicleDataFromShort(sorted_ids(i), dir);
+                if isempty(d), d = obj.GetVehicleData(sorted_ids(i)); end
+                if isempty(d), continue; end
+
+                % Distance to stop line
+                switch dir
+                    case 'E', dist = -obj.stop_line - d.X;   % X < -stop_line → dist > 0
+                    case 'W', dist =  d.X - obj.stop_line;   % X >  stop_line → dist > 0
+                    case 'N', dist = -obj.stop_line - d.Y;
+                    case 'S', dist =  d.Y - obj.stop_line;
+                    otherwise, continue;
+                end
+
+                % Right-turning cars at wait point: already at intersection
+                if dist <= 0
+                    if d.TurnRight && ~d.TurnedRight
+                        ids2(end+1)  = sorted_ids(i);
+                        taus2(end+1) = obj.dt_sim;
+                    end
+                    % All other past-stop-line vehicles excluded (same as IDM)
+                    continue;
+                end
+
+                % GPR prediction
+                vel      = max(d.V, 0.1);           % avoid zero velocity
+                tau_pred = predict(obj.gpr_model, [dist, vel]);
+                tau_pred = max(tau_pred, obj.dt_sim); % floor at one timestep
+
+                ids2(end+1)  = sorted_ids(i);
+                taus2(end+1) = tau_pred;
+            end
+
+            % Apply minimum headway (identical to IDM version)
+            for i = 2:length(taus2)
+                if ~isinf(taus2(i-1))
+                    taus2(i) = max(taus2(i), taus2(i-1) + obj.h_time);
+                end
+            end
+
+            ids  = ids2;
+            taus = taus2;
+        end
+
         %% RIGHT-TURN OPTIMIZATION
         function [opt_p, coordinated_tau_E, coordinated_tau_W, min_cost] = OptimizeRightTurn_EW(obj, turningCarID, trafficLight)
             turningData = obj.GetVehicleData(turningCarID);
             if isempty(turningData)||~turningData.TurnRight
                 opt_p=0; coordinated_tau_E=[]; coordinated_tau_W=[]; min_cost=Inf; return;
             end
-            [ids_E, tau_bar_E] = obj.EstimateAllArrivalTimesIDM('E', trafficLight);
-            [ids_W, tau_bar_W] = obj.EstimateAllArrivalTimesIDM('W', trafficLight);
+            [ids_E, tau_bar_E] = obj.EstimateArrivalTimes('E', trafficLight);
+            [ids_W, tau_bar_W] = obj.EstimateArrivalTimes('W', trafficLight);
             M=length(ids_E); N=length(ids_W);
 
             fprintf('\n=== Right-Turn Opt (EW) ===\n');
@@ -582,8 +662,8 @@ classdef RSU<handle
         function [opt_p, coordinated_tau_S, coordinated_tau_N, min_cost] = OptimizeRightTurn_NS(obj, turningCarID, trafficLight)
             turningData = obj.GetVehicleData(turningCarID);
             if isempty(turningData)||~turningData.TurnRight, opt_p=0; coordinated_tau_S=[]; coordinated_tau_N=[]; min_cost=Inf; return; end
-            [ids_S, tau_bar_S] = obj.EstimateAllArrivalTimesIDM('S', trafficLight);
-            [ids_N, tau_bar_N] = obj.EstimateAllArrivalTimesIDM('N', trafficLight);
+            [ids_S, tau_bar_S] = obj.EstimateArrivalTimes('S', trafficLight);
+            [ids_N, tau_bar_N] = obj.EstimateArrivalTimes('N', trafficLight);
             M=length(ids_S); N=length(ids_N);
             q = find(ids_N == turningCarID);
             if isempty(q), opt_p=0; coordinated_tau_S=tau_bar_S; coordinated_tau_N=tau_bar_N; min_cost=Inf; return; end
@@ -629,8 +709,8 @@ classdef RSU<handle
         function [opt_p, coordinated_tau_W, coordinated_tau_E, min_cost] = OptimizeRightTurn_EW_Reverse(obj, turningCarID, trafficLight)
             turningData = obj.GetVehicleData(turningCarID);
             if isempty(turningData)||~turningData.TurnRight, opt_p=0; coordinated_tau_W=[]; coordinated_tau_E=[]; min_cost=Inf; return; end
-            [ids_W, tau_bar_W] = obj.EstimateAllArrivalTimesIDM('W', trafficLight);
-            [ids_E, tau_bar_E] = obj.EstimateAllArrivalTimesIDM('E', trafficLight);
+            [ids_W, tau_bar_W] = obj.EstimateArrivalTimes('W', trafficLight);
+            [ids_E, tau_bar_E] = obj.EstimateArrivalTimes('E', trafficLight);
             M=length(ids_W); N=length(ids_E);
             q = find(ids_E == turningCarID);
             if isempty(q), opt_p=0; coordinated_tau_W=tau_bar_W; coordinated_tau_E=tau_bar_E; min_cost=Inf; return; end
@@ -665,8 +745,8 @@ classdef RSU<handle
         function [opt_p, coordinated_tau_N, coordinated_tau_S, min_cost] = OptimizeRightTurn_NS_Reverse(obj, turningCarID, trafficLight)
             turningData = obj.GetVehicleData(turningCarID);
             if isempty(turningData)||~turningData.TurnRight, opt_p=0; coordinated_tau_N=[]; coordinated_tau_S=[]; min_cost=Inf; return; end
-            [ids_N, tau_bar_N] = obj.EstimateAllArrivalTimesIDM('N', trafficLight);
-            [ids_S, tau_bar_S] = obj.EstimateAllArrivalTimesIDM('S', trafficLight);
+            [ids_N, tau_bar_N] = obj.EstimateArrivalTimes('N', trafficLight);
+            [ids_S, tau_bar_S] = obj.EstimateArrivalTimes('S', trafficLight);
             M=length(ids_N); N=length(ids_S);
             q = find(ids_S == turningCarID);
             if isempty(q), opt_p=0; coordinated_tau_N=tau_bar_N; coordinated_tau_S=tau_bar_S; min_cost=Inf; return; end
@@ -1035,7 +1115,7 @@ classdef RSU<handle
             if ~obj.IsBeforeStopLine(data)
                 gap_clear = true;
                 if ~isempty(oppDir)
-                    [opp_ids, opp_taus] = obj.EstimateAllArrivalTimesIDM(oppDir, TrafficLight);
+                    [opp_ids, opp_taus] = obj.EstimateArrivalTimes(oppDir, TrafficLight);
                     for ki = 1:length(opp_ids)
                         od = obj.GetVehicleData(opp_ids(ki));
                         if ~isempty(od) && ~od.TurnRight
@@ -1312,7 +1392,7 @@ classdef RSU<handle
             dirs = {'N','S','E','W'};
             for d=1:4
                 dir=dirs{d};
-                [ids, taus] = obj.EstimateAllArrivalTimesIDM(dir, trafficLight);
+                [ids, taus] = obj.EstimateArrivalTimes(dir, trafficLight);
                 if ~isempty(ids)
                     fprintf('%s: ', dir);
                     for i=1:length(ids)

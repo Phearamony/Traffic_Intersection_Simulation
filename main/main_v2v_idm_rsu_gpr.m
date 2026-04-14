@@ -1,4 +1,4 @@
-%% 4-Way Intersection Simulation — V2V IDM + RSU
+%% 4-Way Intersection Simulation — V2V IDM + RSU (GPR arrival model)
 % Mirrors main_v2v_mpc_rsu.m structure exactly;
 % uses IDM vehicle dynamics instead of IDM.
 % IMPORTANT: 'clear classes' forces MATLAB to reload handle classes (Car, RSU)
@@ -65,6 +65,14 @@ CarIDW = 4000;
 global RSUObjs
 RSU1 = RSU(1, 0, 0);
 RSUObjs = [RSU1];
+% --- Load GPR arrival-time model ---
+% Trained by main_human_driving_gpr_train.m
+gpr_model_path = fullfile(fileparts(mfilename('fullpath')), '..', 'simplot', 'gpr_arrival_model.mat');
+if ~exist(gpr_model_path, 'file')
+    error('GPR model not found. Run main_human_driving_gpr_train.m first.');
+end
+RSU1.LoadGPRModel(gpr_model_path);
+
 
 % Track previous traffic light state for green phase detection
 prev_TrafficLight = struct('NS', 'red', 'EW', 'red');
@@ -1599,8 +1607,8 @@ fprintf('=====================================\n');
 
 
 %% === Plot ===
-plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_mpc_rsu.png');
-plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_mpc_rsu.png');
+plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_idm_rsu_gpr.png');
+plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_idm_rsu_gpr.png');
 
 % Collect fuel stats from cars still on grid at end of simulation
 for idx = 1:length(CarN), FuelLog(end+1) = fuelEntry(CarN(idx)); end
@@ -1610,8 +1618,8 @@ for idx = 1:length(CarW), FuelLog(end+1) = fuelEntry(CarW(idx)); end
 
 % Plot fuel consumption & idle analysis
 out_base = fileparts(mfilename('fullpath'));
-fuel_out = fullfile(out_base, '..', 'output', 'fuel_idm_rsu.png');
-plot_fuel_consumption(FuelLog, 'V2X + IDM + RSU', fuel_out);
+fuel_out = fullfile(out_base, '..', 'output', 'fuel_idm_rsu_gpr.png');
+plot_fuel_consumption(FuelLog, 'V2X + IDM + RSU (GPR)', fuel_out);
 
 
 %% === Helper Functions ===
