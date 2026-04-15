@@ -549,6 +549,7 @@ classdef RSU<handle
 
             ids2  = [];
             taus2 = [];
+            prev_dist = NaN;   % distance of the previous (closer) vehicle, for gap computation
 
             for i = 1:n
                 d = obj.GetVehicleDataFromShort(sorted_ids(i), dir);
@@ -557,8 +558,8 @@ classdef RSU<handle
 
                 % Distance to stop line
                 switch dir
-                    case 'E', dist = -obj.stop_line - d.X;   % X < -stop_line → dist > 0
-                    case 'W', dist =  d.X - obj.stop_line;   % X >  stop_line → dist > 0
+                    case 'E', dist = -obj.stop_line - d.X;
+                    case 'W', dist =  d.X - obj.stop_line;
                     case 'N', dist = -obj.stop_line - d.Y;
                     case 'S', dist =  d.Y - obj.stop_line;
                     otherwise, continue;
@@ -569,15 +570,24 @@ classdef RSU<handle
                     if d.TurnRight && ~d.TurnedRight
                         ids2(end+1)  = sorted_ids(i);
                         taus2(end+1) = obj.dt_sim;
+                        prev_dist    = 0;
                     end
-                    % All other past-stop-line vehicles excluded (same as IDM)
                     continue;
                 end
 
-                % GPR prediction
-                vel      = max(d.V, 0.1);           % avoid zero velocity
-                tau_pred = predict(obj.gpr_model, [dist, vel]);
-                tau_pred = max(tau_pred, obj.dt_sim); % floor at one timestep
+                % Gap to lead vehicle (vehicle immediately ahead, closer to stop line)
+                % sorted_ids is closest-first, so previous valid dist = lead vehicle dist
+                if isnan(prev_dist)
+                    gap = dist;   % first vehicle, no lead: treat as free-flow
+                else
+                    gap = max(dist - prev_dist - obj.vehicle_length, 0);
+                end
+                prev_dist = dist;
+
+                % GPR prediction with 3 inputs: [dist, vel, gap_to_lead]
+                vel      = max(d.V, 0);
+                tau_pred = predict(obj.gpr_model, [dist, vel, gap]);
+                tau_pred = max(tau_pred, obj.dt_sim);
 
                 ids2(end+1)  = sorted_ids(i);
                 taus2(end+1) = tau_pred;

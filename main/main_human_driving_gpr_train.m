@@ -16,8 +16,8 @@ addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/f
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/simplot'))
 
 %% ===== SETTINGS =====
-N_TRIALS = 5;      % number of independent simulation runs to accumulate data
-KKmax    = 600;    % timesteps per trial (600 x 0.5s = 5 min)
+N_TRIALS = 20;      % number of independent simulation runs to accumulate data
+KKmax    = 3000;    % timesteps per trial (600 x 0.5s = 5 min)
 dt_val   = 0.5;    % simulation timestep [s]
 
 % Traffic light
@@ -251,19 +251,20 @@ if size(X_train,1) >= MIN_SAMPLES
         mean(residuals), std(residuals)));
     grid on; box off;
 
-    % --- Panel 3: GPR surface (predicted tau over dist x vel grid) ---
+    % --- Panel 3: GPR surface at two representative gap values ---
     ax3 = subplot(1,3,3);
     d_grid  = linspace(2, 140, 50);
-    v_grid  = linspace(1, 25,  50);
+    v_grid  = linspace(0, 25,  50);
     [D, V]  = meshgrid(d_grid, v_grid);
-    Z       = reshape(predict(gpr_model, [D(:), V(:)]), size(D));
+    gap_rep = 8.0;   % representative gap: ~2 car lengths (typical queue spacing)
+    G       = ones(size(D)) * gap_rep;
+    Z       = reshape(predict(gpr_model, [D(:), V(:), G(:)]), size(D));
     contourf(D, V, Z, 20, 'LineColor','none');
     colormap(ax3, 'jet'); colorbar;
     xlabel('Distance to stop line [m]');
-    ylabel('Velocity [m/s]');
-    title('GPR: Predicted \tau [s]');
+    ylabel('Velocity at green start [m/s]');
+    title(sprintf('GPR: Predicted \\tau [s]  (gap=%.0fm)', gap_rep));
     grid on; box off;
-    % Overlay a sample of training data as dots
     hold on;
     n_dots = min(800, size(X_train,1));
     idx_d  = randperm(size(X_train,1), n_dots);
@@ -319,7 +320,6 @@ end
 function carList = idmAccel(carList, dir, isRed, stop_line, dummy)
     for i = 1:length(carList)
         car = carList(i);
-        % Find lead car
         lead = [];
         minD = inf;
         for j = 1:length(carList)
@@ -367,53 +367,119 @@ function b = isBeforeStop(car, dir, sl)
 end
 
 function [X, y] = extractGPRSamples(CarLog, LightLog, stop_line)
-    X = zeros(0,2);  y = zeros(0,1);
-    if isempty(CarLog), return; end
-    llog_times = [LightLog.Time];
-    unique_ids = unique([CarLog.ID]);
-    for id_idx = 1:length(unique_ids)
-        vid  = unique_ids(id_idx);
-        mask = [CarLog.ID] == vid;
-        vlog = CarLog(mask);
-        if length(vlog) < 2, continue; end
-        vdir = vlog(1).Dir;
-        if vlog(1).TurnRight || vlog(1).TurnLeft, continue; end  % straight only
+% Extract GPR training samples using GREEN-START snapshots.
+%
+% For each green phase start, snapshot every vehicle's (dist, vel) at that
+% exact moment. tau = time from green start until the vehicle crosses.
+%
+% This matches exactly how the RSU uses the model: it fires at green start
+% and predicts arrival times from vehicles' current states.
+% Stopped vehicles (vel~0, queued at red) are naturally included.
 
-        % Distance to stop line at each timestep
-        n = length(vlog);
-        dist_arr = zeros(1,n);
-        for k=1:n
-            switch vdir
-                case 'E', dist_arr(k) = -stop_line - vlog(k).X;
-                case 'W', dist_arr(k) =  vlog(k).X - stop_line;
-                case 'N', dist_arr(k) = -stop_line - vlog(k).Y;
-                case 'S', dist_arr(k) =  vlog(k).Y - stop_line;
-            end
-            dist_arr(k) = max(dist_arr(k), 0);
+    X = zeros(0,3);  y = zeros(0,1);   % inputs: [dist, vel, gap_to_lead]
+    if isempty(CarLog) || isempty(LightLog), return; end
+
+    n_log = length(LightLog);
+
+    % Find green-start timesteps for EW and NS axes
+    green_starts_EW = [];
+    green_starts_NS = [];
+    for k = 2:n_log
+        if strcmp(LightLog(k).EW,'green') && ~strcmp(LightLog(k-1).EW,'green')
+            green_starts_EW(end+1) = LightLog(k).Time;
         end
+        if strcmp(LightLog(k).NS,'green') && ~strcmp(LightLog(k-1).NS,'green')
+            green_starts_NS(end+1) = LightLog(k).Time;
+        end
+    end
 
-        % Find crossing
-        cross_idx = find(dist_arr == 0, 1);
-        if isempty(cross_idx) || cross_idx == 1, continue; end
-        t_cross = vlog(cross_idx).Time;
+    all_times = [CarLog.Time];
+    all_ids   = [CarLog.ID];
 
-        % Verify crossing during green/yellow
-        ci = find(llog_times == t_cross, 1);
-        if isempty(ci), continue; end
-        if strcmp(vdir,'E')||strcmp(vdir,'W'), lc=LightLog(ci).EW; else, lc=LightLog(ci).NS; end
-        if ~(strcmp(lc,'green')||strcmp(lc,'yellow')), continue; end
+    % Combine EW and NS green starts into one list
+    axes_list  = [repmat({'EW'}, 1, length(green_starts_EW)), ...
+                  repmat({'NS'}, 1, length(green_starts_NS))];
+    times_list = [green_starts_EW, green_starts_NS];
 
-        % Add samples — observation can be during any phase (red/green).
-        % Only the CROSSING must be during green/yellow (checked above).
-        % Include stopped vehicles (vel~0): queue discharge is exactly
-        % the scenario the RSU needs to predict at green start.
-        for k = 1:(cross_idx-1)
-            dk   = dist_arr(k);
-            velk = vlog(k).V;
-            tauk = t_cross - vlog(k).Time;
-            if dk < 1 || dk > 200, continue; end    % outside comm range
-            if tauk <= 0 || tauk > 120, continue; end  % sanity bounds only
-            X(end+1,:) = [dk, velk];
+    for gi = 1:length(times_list)
+        green_t = times_list(gi);
+        axis    = axes_list{gi};
+
+        % Snapshot: all vehicles logged at this green-start timestep
+        snap = CarLog(all_times == green_t);
+
+        for ai = 1:length(snap)
+            vdir = snap(ai).Dir;
+
+            % Skip turning vehicles — straight-going only
+            if snap(ai).TurnRight || snap(ai).TurnLeft, continue; end
+
+            % Direction must match this axis
+            if strcmp(axis,'EW') && ~(strcmp(vdir,'E') || strcmp(vdir,'W')), continue; end
+            if strcmp(axis,'NS') && ~(strcmp(vdir,'N') || strcmp(vdir,'S')), continue; end
+
+            % Distance to stop line at green start
+            switch vdir
+                case 'E', dk = -stop_line - snap(ai).X;
+                case 'W', dk =  snap(ai).X - stop_line;
+                case 'N', dk = -stop_line - snap(ai).Y;
+                case 'S', dk =  snap(ai).Y - stop_line;
+                otherwise, continue;
+            end
+            if dk <= 0 || dk > 200, continue; end  % already past stop or out of range
+            velk = snap(ai).V;                     % velocity at green start (may be 0)
+            vid  = snap(ai).ID;                    % must be defined before gap loop
+
+            % Gap to nearest lead vehicle (same direction, closer to stop line)
+            % If no lead: gap = dk (free-flow condition)
+            min_lead_dist = Inf;
+            for aj = 1:length(snap)
+                if snap(aj).ID == vid, continue; end
+                if ~strcmp(snap(aj).Dir, vdir), continue; end
+                if snap(aj).TurnRight || snap(aj).TurnLeft, continue; end
+                switch vdir
+                    case 'E', dk_lead = -stop_line - snap(aj).X;
+                    case 'W', dk_lead =  snap(aj).X - stop_line;
+                    case 'N', dk_lead = -stop_line - snap(aj).Y;
+                    case 'S', dk_lead =  snap(aj).Y - stop_line;
+                    otherwise, continue;
+                end
+                % Lead must be between vehicle and stop line (smaller dist, still before stop)
+                if dk_lead > 0 && dk_lead < dk && dk_lead < min_lead_dist
+                    min_lead_dist = dk_lead;
+                end
+            end
+            if isinf(min_lead_dist)
+                gap_k = dk;              % no lead vehicle: free-flow
+            else
+                gap_k = max(dk - min_lead_dist - 4.0, 0);  % 4m = vehicle length
+            end
+
+            % Find this vehicle's future log entries (after green_t)
+            vid_mask = (all_ids == vid) & (all_times > green_t);
+            vid_log  = CarLog(vid_mask);
+            if isempty(vid_log), continue; end
+
+            % Find first timestep where vehicle crossed the stop line
+            t_cross = [];
+            for si = 1:length(vid_log)
+                switch vdir
+                    case 'E', d_si = -stop_line - vid_log(si).X;
+                    case 'W', d_si =  vid_log(si).X - stop_line;
+                    case 'N', d_si = -stop_line - vid_log(si).Y;
+                    case 'S', d_si =  vid_log(si).Y - stop_line;
+                end
+                if d_si <= 0
+                    t_cross = vid_log(si).Time;
+                    break;
+                end
+            end
+
+            if isempty(t_cross), continue; end
+            tauk = t_cross - green_t;
+            if tauk <= 0 || tauk > 120, continue; end
+
+            X(end+1,:) = [dk, velk, gap_k];
             y          = [y; tauk];
         end
     end
