@@ -207,11 +207,21 @@ classdef RSU<handle
             for i = 1:n
                 d = obj.GetVehicleDataFromShort(ids(i), dir);
                 if isempty(d), dists(i)=Inf; continue; end
+                % Use SIGNED distance so cars already past the stop line
+                % (waiting at turn_wait inside the stop-line zone) sort to
+                % the FRONT (negative value).  The old abs() made them sort
+                % BEHIND approaching cars that were merely close to the line,
+                % which caused the optimizer to assign them a headway-delayed
+                % tau (2.5s) forever instead of tau=dt_sim, deadlocking the
+                % right-turner against the straight queue behind it.
+                %
+                %   Negative dist  → past stop line (closest to intersection)
+                %   Positive dist  → still approaching (further from center)
                 switch dir
-                    case 'N', dists(i) = abs(-obj.stop_line - d.Y);
-                    case 'S', dists(i) = abs(obj.stop_line - d.Y);
-                    case 'E', dists(i) = abs(-obj.stop_line - d.X);
-                    case 'W', dists(i) = abs(obj.stop_line - d.X);
+                    case 'N', dists(i) = -obj.stop_line - d.Y;  % target Y=-10
+                    case 'S', dists(i) =  d.Y - obj.stop_line;  % target Y=+10
+                    case 'E', dists(i) = -obj.stop_line - d.X;  % target X=-10
+                    case 'W', dists(i) =  d.X - obj.stop_line;  % target X=+10
                 end
             end
             [sorted_dists, sortIdx] = sort(dists, 'ascend');
@@ -619,7 +629,17 @@ classdef RSU<handle
             fprintf('W(%d): ',N); for i=1:N, d=obj.GetVehicleData(ids_W(i)); tr=''; if d.TurnRight,tr='*';end; fprintf('%d%s(%.1fs) ',ids_W(i),tr,tau_bar_W(i)); end; fprintf('\n');
 
             q = find(ids_W == turningCarID);
-            if isempty(q), opt_p=0; coordinated_tau_E=tau_bar_E; coordinated_tau_W=tau_bar_W; min_cost=Inf; return; end
+            if isempty(q)
+                % Turner not in estimation list (GPR timing edge case or car
+                % just entered wait zone this timestep).  Inject manually so
+                % the optimization always runs and never returns p*=0.
+                ids_W(end+1)   = turningCarID;
+                tau_bar_W(end+1) = obj.dt_sim;   % at wait point → arrives NOW
+                N = N + 1;
+                q = N;
+                fprintf('[RSU] W-turner %d not in ids_W — injected with tau=%.2fs\n', ...
+                        turningCarID, obj.dt_sim);
+            end
 
             straight_E_mask = true(1, M);
             for i=1:M, eData=obj.GetVehicleData(ids_E(i)); if ~isempty(eData)&&eData.TurnRight, straight_E_mask(i)=false; end; end
@@ -676,7 +696,14 @@ classdef RSU<handle
             [ids_N, tau_bar_N] = obj.EstimateArrivalTimes('N', trafficLight);
             M=length(ids_S); N=length(ids_N);
             q = find(ids_N == turningCarID);
-            if isempty(q), opt_p=0; coordinated_tau_S=tau_bar_S; coordinated_tau_N=tau_bar_N; min_cost=Inf; return; end
+            if isempty(q)
+                ids_N(end+1)     = turningCarID;
+                tau_bar_N(end+1) = obj.dt_sim;
+                N = N + 1;
+                q = N;
+                fprintf('[RSU] N-turner %d not in ids_N — injected with tau=%.2fs\n', ...
+                        turningCarID, obj.dt_sim);
+            end
             straight_S_mask = true(1, M);
             for i=1:M, sData=obj.GetVehicleData(ids_S(i)); if ~isempty(sData)&&sData.TurnRight, straight_S_mask(i)=false; end; end
             min_cost=Inf; opt_p=M+1; best_tau_S=tau_bar_S; best_tau_N=tau_bar_N;
@@ -723,7 +750,14 @@ classdef RSU<handle
             [ids_E, tau_bar_E] = obj.EstimateArrivalTimes('E', trafficLight);
             M=length(ids_W); N=length(ids_E);
             q = find(ids_E == turningCarID);
-            if isempty(q), opt_p=0; coordinated_tau_W=tau_bar_W; coordinated_tau_E=tau_bar_E; min_cost=Inf; return; end
+            if isempty(q)
+                ids_E(end+1)     = turningCarID;
+                tau_bar_E(end+1) = obj.dt_sim;
+                N = N + 1;
+                q = N;
+                fprintf('[RSU] E-turner %d not in ids_E — injected with tau=%.2fs\n', ...
+                        turningCarID, obj.dt_sim);
+            end
             straight_W_mask = true(1, M);
             for i=1:M, wData=obj.GetVehicleData(ids_W(i)); if ~isempty(wData)&&wData.TurnRight, straight_W_mask(i)=false; end; end
             min_cost=Inf; opt_p=M+1; best_tau_W=tau_bar_W; best_tau_E=tau_bar_E;
@@ -759,7 +793,14 @@ classdef RSU<handle
             [ids_S, tau_bar_S] = obj.EstimateArrivalTimes('S', trafficLight);
             M=length(ids_N); N=length(ids_S);
             q = find(ids_S == turningCarID);
-            if isempty(q), opt_p=0; coordinated_tau_N=tau_bar_N; coordinated_tau_S=tau_bar_S; min_cost=Inf; return; end
+            if isempty(q)
+                ids_S(end+1)     = turningCarID;
+                tau_bar_S(end+1) = obj.dt_sim;
+                N = N + 1;
+                q = N;
+                fprintf('[RSU] S-turner %d not in ids_S — injected with tau=%.2fs\n', ...
+                        turningCarID, obj.dt_sim);
+            end
             straight_N_mask = true(1, M);
             for i=1:M, nData=obj.GetVehicleData(ids_N(i)); if ~isempty(nData)&&nData.TurnRight, straight_N_mask(i)=false; end; end
             min_cost=Inf; opt_p=M+1; best_tau_N=tau_bar_N; best_tau_S=tau_bar_S;
@@ -1117,12 +1158,50 @@ classdef RSU<handle
             end
 
             % ============================================================
-            % STEP 2: AT-LINE GAP CHECK (car past stop line, no opp turner)
+            % STEP 2: AT-LINE DECISION (car at/past stop line)
             % ============================================================
-            % Opposing right-turner is gone; this car is alone at the line.
-            % Normal optimizer excludes past-stop-line cars (q=[]) → NaN.
-            % Do a direct gap check instead.
+            % Cars that have reached turn_wait (5 m) are inside the RSU's
+            % stop_line (10 m), so IsBeforeStopLine returns false.
+            %
+            % FIX (Bug 1 – mutual-turner deadlock):
+            %   Always try the coordinated arrival time from the optimizer
+            %   FIRST.  The optimizer already bakes in tau_safe and assigns
+            %   the earliest safe slot.  The old raw gap-check (tau < tau_safe)
+            %   was more conservative and blocked both turners when opposing
+            %   straight traffic was within tau_safe — even though the optimizer
+            %   had already found a safe preceding slot for the turner.
+            %
+            % Fallback to raw gap-check only when no optimization result exists.
             if ~obj.IsBeforeStopLine(data)
+                registerTurnerID();
+
+                % --- Priority 1: use coordinated tau from optimizer ----------
+                tau = obj.GetCoordinatedArrivalTime(vehicleID, dir);
+
+                % If no result yet, trigger a fresh optimization now
+                if isnan(tau)
+                    switch dir
+                        case 'W', obj.OptimizeRightTurn_EW(vehicleID, TrafficLight);
+                        case 'E', obj.OptimizeRightTurn_EW_Reverse(vehicleID, TrafficLight);
+                        case 'N', obj.OptimizeRightTurn_NS(vehicleID, TrafficLight);
+                        case 'S', obj.OptimizeRightTurn_NS_Reverse(vehicleID, TrafficLight);
+                    end
+                    tau = obj.GetCoordinatedArrivalTime(vehicleID, dir);
+                end
+
+                if ~isnan(tau)
+                    V_rec = obj.CalculateRecommendedVelocity(vehicleID, tau, t);
+                    vpos = struct('vehicle_id',vehicleID,'direction',dir,...
+                                  'coordinated_tau',tau,'recommended_V',V_rec);
+                    if tau <= 0.5
+                        turn_signal = 1; vpos.action = 'proceed';
+                    else
+                        turn_signal = -1; vpos.action = 'wait';
+                    end
+                    return;
+                end
+
+                % --- Fallback: raw gap-check (no optimization result yet) ---
                 gap_clear = true;
                 if ~isempty(oppDir)
                     [opp_ids, opp_taus] = obj.EstimateArrivalTimes(oppDir, TrafficLight);
@@ -1135,8 +1214,6 @@ classdef RSU<handle
                         end
                     end
                 end
-
-                registerTurnerID();
 
                 if gap_clear
                     turn_signal = 1;
