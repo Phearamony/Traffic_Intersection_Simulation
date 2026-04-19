@@ -6,6 +6,7 @@ clear global RSUObjs
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/class'))
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/function'))
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/simplot'))
+PROJECT_ROOT = 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection';
 
 global CarN CarS CarE CarW TrafficLight
 global dt KK
@@ -127,7 +128,7 @@ for kk = 1:KKmax
 end
 
 % Save alongside the main files so all scenarios can load it
-sched_path = fullfile(fileparts(mfilename('fullpath')), '..', 'simplot', 'traffic_schedule.mat');
+sched_path = fullfile(PROJECT_ROOT, 'simplot', 'traffic_schedule.mat');
 save(sched_path, 'sched');
 fprintf('Traffic schedule saved → %s\n', sched_path);
 fprintf('  Total arrival intentions: N=%d  S=%d  E=%d  W=%d\n', ...

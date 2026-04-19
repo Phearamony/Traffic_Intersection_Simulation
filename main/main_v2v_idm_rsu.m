@@ -1599,8 +1599,8 @@ fprintf('=====================================\n');
 
 
 %% === Plot ===
-plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_mpc_rsu.png');
-plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_mpc_rsu.png');
+plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_idm_rsu.png');
+plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_idm_rsu.png');
 
 % Collect fuel stats from cars still on grid at end of simulation
 for idx = 1:length(CarN), FuelLog(end+1) = fuelEntry(CarN(idx)); end

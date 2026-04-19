@@ -14,6 +14,7 @@ close all; clear; clc;
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/class'))
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/function'))
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/simplot'))
+PROJECT_ROOT = 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection';
 
 %% ===== SETTINGS =====
 N_TRIALS = 20;      % number of independent simulation runs to accumulate data
@@ -223,7 +224,7 @@ if size(X_train,1) >= MIN_SAMPLES
     fprintf('Holdout (n=%d):  RMSE=%.2f s   MAE=%.2f s\n', n_ho, rmse, mae);
 
     %% --- Diagnostic plots ---
-    out_dir = fullfile(fileparts(mfilename('fullpath')), '..', 'output');
+    out_dir = fullfile(fileparts(PROJECT_ROOT, 'output');
 
     fig = figure('Visible','off','Color','white','Position',[100 100 1300 420]);
 
