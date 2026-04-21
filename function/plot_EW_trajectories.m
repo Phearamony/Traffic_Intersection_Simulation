@@ -18,7 +18,9 @@ if ~isempty(CarLogW),  tMax = max(tMax, max([CarLogW.Time]));  end
 if tMax <= 0, warning('No data to plot.'); return; end
 
 % === Figure ===
-hFig = figure('Name','EW Trajectories @ y=0','Position',[120 100 1000 560]);
+% hFig = figure('Name','EW Trajectories @ y=0','Position',[120 100 1000 560]);
+hFig = figure('Name', 'NS Trajectories @ x=0');
+set(hFig, 'Position', [100 100 1100 400]);
 
 % ===== (a) EAST =====
 hAx1 = subplot(2,1,1); hold(hAx1,'on'); grid(hAx1,'on');
@@ -124,7 +126,11 @@ legs = {}; hs = [];
 if ~isempty(h_straight), hs(end+1)=h_straight; legs{end+1}='Straight'; end
 if ~isempty(h_left),     hs(end+1)=h_left;     legs{end+1}='Left turn'; end
 if ~isempty(h_right),    hs(end+1)=h_right;    legs{end+1}='Right turn'; end
-if ~isempty(hs), legend(ax, hs, legs, 'Location','northeast','FontSize',8); end
+if ~isempty(hs), legend(ax, hs, legs, 'Location','northeast','FontSize',10); end
+
+
+set(findall(gcf,'-property','FontSize'),'FontSize',12);
+
 end
 
 function ym = auto_ylim(ax)

@@ -103,6 +103,8 @@ grid on; box off;
 sgtitle(sprintf('Fuel Consumption & Idle Analysis — %s', scenario_label), ...
     'FontSize', 13, 'FontWeight', 'bold');
 
+set(findall(gcf,'-property','FontSize'),'FontSize',12);
+
 %% ---- Save ----
 exportgraphics(fig, output_path, 'Resolution', 150);
 fprintf('[plot_fuel_consumption] Saved → %s\n', output_path);

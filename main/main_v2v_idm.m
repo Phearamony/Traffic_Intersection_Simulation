@@ -13,7 +13,7 @@ global dt KK
 InitVals;
 fm = 1;
 dt = 0.5;
-KKmax = 600; %3000 = 25mn
+KKmax = 500; %3000 = 25mn
 
 % --- Traffic light parameters (time-based) ---
 Cycle = 120;           % seconds

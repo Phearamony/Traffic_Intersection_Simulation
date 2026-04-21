@@ -224,9 +224,9 @@ if size(X_train,1) >= MIN_SAMPLES
     fprintf('Holdout (n=%d):  RMSE=%.2f s   MAE=%.2f s\n', n_ho, rmse, mae);
 
     %% --- Diagnostic plots ---
-    out_dir = fullfile(fileparts(PROJECT_ROOT, 'output');
-
-    fig = figure('Visible','off','Color','white','Position',[100 100 1300 420]);
+    out_dir = fullfile(PROJECT_ROOT, 'output');
+ 
+    fig = figure('Visible','off','Color','white','Position',[100 100 1200 420]);
 
     % --- Panel 1: Predicted vs Actual ---
     ax1 = subplot(1,3,1);
@@ -275,6 +275,8 @@ if size(X_train,1) >= MIN_SAMPLES
 
     sgtitle(sprintf('GPR Arrival-Time Model  |  %d training samples  |  %d trials', ...
         size(X_train,1), N_TRIALS), 'FontSize',12,'FontWeight','bold');
+
+    set(findall(gcf,'-property','FontSize'),'FontSize',12);
 
     plot_path = fullfile(out_dir, 'gpr_model_diagnostics.png');
     exportgraphics(fig, plot_path, 'Resolution', 150);
