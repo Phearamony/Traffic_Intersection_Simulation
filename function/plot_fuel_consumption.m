@@ -52,10 +52,10 @@ n_str = sum(is_str);
 
 %% ---- Figure ----
 fig = figure('Visible','off','Color','white');
-set(fig, 'Position', [100 100 1100 400]);
+set(fig, 'Position', [100 100 500 400]);
 
 %----- Panel 1: Mean total fuel -----
-ax1 = subplot(1,3,1);
+ax1 = subplot(1,2,1);
 bar_data = [mean_fuel_rt, mean_fuel_str];
 b = bar(bar_data, 0.5);
 b.FaceColor = 'flat';
@@ -72,7 +72,7 @@ text(2, mean_fuel_str * 1.03, sprintf('%.1f ml', mean_fuel_str), ...
 ylim([0, max(bar_data)*1.25 + 0.1]);
 
 %----- Panel 2: Idle time breakdown -----
-ax2 = subplot(1,3,2);
+ax2 = subplot(1,2,2);
 idle_mat = [mean_gap_rt,  mean_red_rt;
             mean_gap_str, mean_red_str];
 b2 = bar(idle_mat, 'stacked');
@@ -82,22 +82,22 @@ set(ax2, 'XTickLabel', {sprintf('Right-turn\n(n=%d)',n_rt), ...
                          sprintf('Straight/Left\n(n=%d)',n_str)});
 ylabel('Mean idle time [s]');
 title('Idle Time Breakdown');
-legend({'Gap waiting','Red-light wait'}, 'Location','northeast');
+legend({'Gap waiting','Red-light wait'}, 'Location','best');
 grid on; box off;
 
-%----- Panel 3: Fuel distribution (box plot) -----
-ax3 = subplot(1,3,3);
-all_fuel    = [fuel_rt(:); fuel_str(:)];
-group_label = [repmat({'Right-turn'}, numel(fuel_rt),  1); ...
-               repmat({'Straight/Left'},numel(fuel_str), 1)];
-
-if ~isempty(all_fuel)
-    boxplot(all_fuel, group_label, 'Colors', [0.20 0.60 0.86; 0.93 0.49 0.19], ...
-        'Symbol','o', 'OutlierSize', 4);
-end
-ylabel('Fuel consumed [ml]');
-title('Fuel Distribution');
-grid on; box off;
+% %----- Panel 3: Fuel distribution (box plot) -----
+% ax3 = subplot(1,3,3);
+% all_fuel    = [fuel_rt(:); fuel_str(:)];
+% group_label = [repmat({'Right-turn'}, numel(fuel_rt),  1); ...
+%                repmat({'Straight/Left'},numel(fuel_str), 1)];
+% 
+% if ~isempty(all_fuel)
+%     boxplot(all_fuel, group_label, 'Colors', [0.20 0.60 0.86; 0.93 0.49 0.19], ...
+%         'Symbol','o', 'OutlierSize', 4);
+% end
+% ylabel('Fuel consumed [ml]');
+% title('Fuel Distribution');
+% grid on; box off;
 
 %----- Shared super-title -----
 sgtitle(sprintf('Fuel Consumption & Idle Analysis — %s', scenario_label), ...

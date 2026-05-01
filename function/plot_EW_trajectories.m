@@ -1,81 +1,129 @@
 function plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, outFile, opts)
-% Colored version: straight=black, left turn=blue, right turn=red.
-% x-axis = time [s], y-axis = signed distance to stop line (0 = stop line)
+% Merged EW trajectory plot for conference paper
+% East vehicles: positive y
+% West vehicles: negative y
+% y = signed distance to stop line [m]
 
-if nargin < 5 || isempty(outFile), outFile = 'EW.png'; end
+if nargin < 5 || isempty(outFile), outFile = 'EW_merged.png'; end
 if nargin < 6, opts = struct; end
 
-% Options
-draw_guides = getfielddef(opts,'draw_guides',false); % disable guide lines
+% ---------------- Options ----------------
+draw_guides = getfielddef(opts,'draw_guides',false);
 v_free      = getfielddef(opts,'v_free',12);
-light_width = getfielddef(opts,'light_width',5);
+light_width = getfielddef(opts,'light_width',4);
 
-% Time range
+fig_width   = getfielddef(opts,'fig_width',650);   % narrower
+fig_height  = getfielddef(opts,'fig_height',500);  % taller
+font_size   = getfielddef(opts,'font_size',10);
+line_width  = getfielddef(opts,'line_width',1.0);
+
+% Optional manual y-limit, e.g. 120
+manual_ymax = getfielddef(opts,'ymax',[]);
+
+% ---------------- Time range ----------------
 tMax = 0;
 if ~isempty(LightLog), tMax = max(tMax, max([LightLog.Time])); end
 if ~isempty(CarLogE),  tMax = max(tMax, max([CarLogE.Time]));  end
 if ~isempty(CarLogW),  tMax = max(tMax, max([CarLogW.Time]));  end
-if tMax <= 0, warning('No data to plot.'); return; end
 
-% === Figure ===
-% hFig = figure('Name','EW Trajectories @ y=0','Position',[120 100 1000 560]);
-hFig = figure('Name', 'NS Trajectories @ x=0');
-set(hFig, 'Position', [100 100 1100 400]);
+if tMax <= 0
+    warning('No data to plot.');
+    return;
+end
 
-% ===== (a) EAST =====
-hAx1 = subplot(2,1,1); hold(hAx1,'on'); grid(hAx1,'on');
-title(hAx1,'(a) Trajectories of cars from East');
-xlabel(hAx1,'Time [s]'); ylabel(hAx1,'Distance to stop line [m]');
-xlim(hAx1,[0 tMax]);
+% ---------------- Figure ----------------
+hFig = figure('Name','EW Trajectories','Color','w');
+set(hFig,'Position',[100 100 fig_width fig_height]);
 
-% traffic light band
-paint_light_strip_y0(hAx1, LightLog, 'EW', tMax, light_width);
+ax = axes(hFig);
+hold(ax,'on');
+grid(ax,'on');
+box(ax,'on');
+ax.Layer = 'top';
 
-% Optional guide lines
+xlabel(ax,'Time [s]','FontSize',font_size);
+ylabel(ax,'Distance From Intersections [m]','FontSize',font_size);
+xlim(ax,[0 tMax]);
+
+% ---------------- Traffic light strip ----------------
+paint_light_strip_y0(ax, LightLog, 'EW', tMax, light_width);
+
+% ---------------- Optional guide lines ----------------
 if draw_guides
-    y0s = 5:5:60;
-    for k = 1:numel(y0s)
-        t1 = y0s(k)/max(v_free,0.1);
-        plot(hAx1,[0 min(t1,tMax)],[y0s(k) max(0,y0s(k)-v_free*min(t1,tMax))], ...
-             'Color',[0.6 0.6 0.6],'LineWidth',0.75);
+    % East side guides (positive)
+    y0sE = 5:5:60;
+    for k = 1:numel(y0sE)
+        t1 = y0sE(k)/max(v_free,0.1);
+        plot(ax, [0 min(t1,tMax)], ...
+                 [y0sE(k) max(0,y0sE(k)-v_free*min(t1,tMax))], ...
+                 'Color',[0.75 0.75 0.75], 'LineWidth',0.6);
+    end
+
+    % West side guides (negative)
+    y0sW = -5:-5:-60;
+    for k = 1:numel(y0sW)
+        t1 = abs(y0sW(k))/max(v_free,0.1);
+        plot(ax, [0 min(t1,tMax)], ...
+                 [y0sW(k) min(0,y0sW(k)+v_free*min(t1,tMax))], ...
+                 'Color',[0.75 0.75 0.75], 'LineWidth',0.6);
     end
 end
 
-% Plot all E trajectories (colored by turn type)
-plot_traj_colored(hAx1, CarLogE, @(X) max(0, (-stop_line) - X));
+% ---------------- Plot East and West together ----------------
+% East: positive
+plot_traj_colored(ax, CarLogE, @(X) max(0, (-stop_line) - X), line_width);
 
-ylim(hAx1,[0 auto_ylim(hAx1)]);
+% West: negative
+plot_traj_colored(ax, CarLogW, @(X) -max(0, X - stop_line), line_width);
 
-% ===== (b) WEST =====
-hAx2 = subplot(2,1,2); hold(hAx2,'on'); grid(hAx2,'on');
-title(hAx2,'(b) Trajectories of cars from West');
-xlabel(hAx2,'Time [s]'); ylabel(hAx2,'Distance to stop line [m]');
-xlim(hAx2,[0 tMax]);
-
-paint_light_strip_y0(hAx2, LightLog, 'EW', tMax, light_width);
-
-if draw_guides
-    y0s = -5:-5:-60;
-    for k = 1:numel(y0s)
-        t1 = abs(y0s(k))/max(v_free,0.1);
-        plot(hAx2,[0 min(t1,tMax)],[y0s(k) min(0,y0s(k)+v_free*min(t1,tMax))], ...
-             'Color',[0.6 0.6 0.6],'LineWidth',0.75);
-    end
+% ---------------- Y-limits ----------------
+if isempty(manual_ymax)
+    yMaxE = get_abs_ymax(CarLogE, @(X) max(0, (-stop_line) - X));
+    yMaxW = get_abs_ymax(CarLogW, @(X) -max(0, X - stop_line));
+    yMax = max([yMaxE, yMaxW, 10]);
+    yMax = ceil(yMax/10)*10;   % round nicely
+else
+    yMax = manual_ymax;
 end
 
-plot_traj_colored(hAx2, CarLogW, @(X) -max(0, X - stop_line));
+ylim(ax,[-yMax yMax]);
 
-ylim(hAx2,[-auto_ylim(hAx2) 0]);
+% ---------------- Small labels inside graph ----------------
+text(ax, 0.02, 0.94, '(a) From East', ...
+    'Units','normalized', ...
+    'FontSize',font_size, ...
+    'FontWeight','bold', ...
+    'VerticalAlignment','top');
 
-exportgraphics(hFig, outFile, 'Resolution',300);
-fprintf('Saved clean figure to %s\n', outFile);
+text(ax, 0.02, 0.06, '(b) From West', ...
+    'Units','normalized', ...
+    'FontSize',font_size, ...
+    'FontWeight','bold', ...
+    'VerticalAlignment','bottom');
+
+% ---------------- Legend (single legend only) ----------------
+hS = plot(ax, nan, nan, 'k', 'LineWidth', line_width);
+hL = plot(ax, nan, nan, 'Color', [0.15 0.35 0.85], 'LineWidth', line_width);
+hR = plot(ax, nan, nan, 'Color', [0.85 0.15 0.15], 'LineWidth', line_width);
+
+legend(ax, [hS hL hR], {'Straight','Left turn','Right turn'}, ...
+       'Location','northeast', 'FontSize',font_size, 'Box','on');
+
+set(ax,'FontSize',font_size);
+
+exportgraphics(hFig, outFile, 'Resolution', 300);
+fprintf('Saved merged figure to %s\n', outFile);
+
 end
 
-% ======= HELPERS =======
+% =================== HELPERS ===================
+
 function paint_light_strip_y0(ax, LLog, whichField, tmax, light_width)
 if isempty(LLog), return; end
+
 times  = [LLog.Time];
 phases = lower(string({LLog.(whichField)}));
+
 i0 = 1;
 for k = 2:numel(times)
     if phases(k) ~= phases(k-1)
@@ -84,65 +132,83 @@ for k = 2:numel(times)
     end
 end
 drawSeg(times(i0), tmax, phases(end), ax, light_width);
-plot(ax,[0 tmax],[0 0],'k-','LineWidth',1);
+
+% center line at y = 0
+plot(ax,[0 tmax],[0 0],'k-','LineWidth',0.8);
 end
 
-function drawSeg(t1,t2,phase,ax,light_width)
+function drawSeg(t1, t2, phase, ax, light_width)
 if t2 <= t1, return; end
+
 switch phase
-    case 'green',  c = [0 .7 0];
-    case 'yellow', c = [.95 .75 0];
-    otherwise,     c = [.8 0 0];
-end
-dy = light_width/2;
-patch(ax,[t1 t2 t2 t1],[-dy -dy +dy +dy],c,'EdgeColor','none','FaceAlpha',0.95);
+    case 'green'
+        c = [0 0.7 0];
+    case 'yellow'
+        c = [0.95 0.75 0];
+    otherwise
+        c = [0.8 0 0];
 end
 
-function plot_traj_colored(ax, CLog, distFun)
+dy = light_width/2;
+patch(ax, [t1 t2 t2 t1], [-dy -dy dy dy], c, ...
+      'EdgeColor','none', 'FaceAlpha',0.9);
+end
+
+function plot_traj_colored(ax, CLog, distFun, lw)
 if isempty(CLog), return; end
+
 ids = unique([CLog.ID]);
-h_straight = []; h_left = []; h_right = [];
+
 for ii = 1:numel(ids)
     id = ids(ii);
-    sel = CLog([CLog.ID]==id);
-    [t,idx] = sort([sel.Time]); sel = sel(idx);
+    sel = CLog([CLog.ID] == id);
+    [t, idx] = sort([sel.Time]);
+    sel = sel(idx);
+
     y = distFun([sel.X]);
-    % Determine turn type from first record of this car
+
     is_left  = sel(1).TurnLeft;
     is_right = sel(1).TurnRight;
+
     if is_right
-        h = plot(ax,t,y,'Color',[0.85 0.15 0.15],'LineWidth',0.9);
-        if isempty(h_right), h_right = h; end
+        plot(ax, t, y, 'Color', [0.85 0.15 0.15], 'LineWidth', lw);
     elseif is_left
-        h = plot(ax,t,y,'Color',[0.15 0.35 0.85],'LineWidth',0.9);
-        if isempty(h_left), h_left = h; end
+        plot(ax, t, y, 'Color', [0.15 0.35 0.85], 'LineWidth', lw);
     else
-        h = plot(ax,t,y,'k','LineWidth',0.9);
-        if isempty(h_straight), h_straight = h; end
+        plot(ax, t, y, 'k', 'LineWidth', lw);
     end
 end
-% Add legend
-legs = {}; hs = [];
-if ~isempty(h_straight), hs(end+1)=h_straight; legs{end+1}='Straight'; end
-if ~isempty(h_left),     hs(end+1)=h_left;     legs{end+1}='Left turn'; end
-if ~isempty(h_right),    hs(end+1)=h_right;    legs{end+1}='Right turn'; end
-if ~isempty(hs), legend(ax, hs, legs, 'Location','northeast','FontSize',10); end
-
-
-set(findall(gcf,'-property','FontSize'),'FontSize',12);
-
 end
 
-function ym = auto_ylim(ax)
-L = findobj(ax,'Type','line');
-if isempty(L), ym = 50; return; end
+function ym = get_abs_ymax(CLog, distFun)
+if isempty(CLog)
+    ym = 0;
+    return;
+end
+
+ids = unique([CLog.ID]);
 ys = [];
-for j=1:numel(L)
-    ys = [ys; L(j).YData(:)];
+
+for ii = 1:numel(ids)
+    id = ids(ii);
+    sel = CLog([CLog.ID] == id);
+    y = distFun([sel.X]);
+    ys = [ys; y(:)];
 end
-ym = max(10, prctile(abs(ys),98)*1.1);
+
+ys = ys(isfinite(ys));
+
+if isempty(ys)
+    ym = 0;
+else
+    ym = max(abs(ys));
+end
 end
 
 function v = getfielddef(s,f,d)
-if isstruct(s) && isfield(s,f), v = s.(f); else, v = d; end
+if isstruct(s) && isfield(s,f)
+    v = s.(f);
+else
+    v = d;
+end
 end
