@@ -12,10 +12,10 @@ draw_guides = getfielddef(opts,'draw_guides',false);
 v_free      = getfielddef(opts,'v_free',12);
 light_width = getfielddef(opts,'light_width',4);
 
-fig_width   = getfielddef(opts,'fig_width',650);   % narrower
-fig_height  = getfielddef(opts,'fig_height',500);  % taller
-font_size   = getfielddef(opts,'font_size',10);
-line_width  = getfielddef(opts,'line_width',1.0);
+fig_width   = getfielddef(opts,'fig_width',500);   % narrower
+fig_height  = getfielddef(opts,'fig_height',625);  % taller
+font_size   = getfielddef(opts,'font_size',15);
+line_width  = getfielddef(opts,'line_width',1.4);
 
 % Optional manual y-limit, e.g. 120
 manual_ymax = getfielddef(opts,'ymax',[]);
@@ -41,8 +41,8 @@ grid(ax,'on');
 box(ax,'on');
 ax.Layer = 'top';
 
-xlabel(ax,'Time [s]','FontSize',font_size);
-ylabel(ax,'Distance From Intersections [m]','FontSize',font_size);
+xlabel(ax,'Time [s]','FontSize',font_size + 2,'FontWeight','bold');
+ylabel(ax,'Distance From Intersections [m]','FontSize',font_size + 2,'FontWeight','bold');
 xlim(ax,[0 tMax]);
 
 % ---------------- Traffic light strip ----------------
@@ -91,13 +91,13 @@ ylim(ax,[-yMax yMax]);
 % ---------------- Small labels inside graph ----------------
 text(ax, 0.02, 0.94, '(a) From East', ...
     'Units','normalized', ...
-    'FontSize',font_size, ...
+    'FontSize',font_size + 1, ...
     'FontWeight','bold', ...
     'VerticalAlignment','top');
 
 text(ax, 0.02, 0.06, '(b) From West', ...
     'Units','normalized', ...
-    'FontSize',font_size, ...
+    'FontSize',font_size + 1, ...
     'FontWeight','bold', ...
     'VerticalAlignment','bottom');
 
@@ -107,9 +107,9 @@ hL = plot(ax, nan, nan, 'Color', [0.15 0.35 0.85], 'LineWidth', line_width);
 hR = plot(ax, nan, nan, 'Color', [0.85 0.15 0.15], 'LineWidth', line_width);
 
 legend(ax, [hS hL hR], {'Straight','Left turn','Right turn'}, ...
-       'Location','northeast', 'FontSize',font_size, 'Box','on');
+       'Location','northeast', 'FontSize',font_size + 1, 'Box','on');
 
-set(ax,'FontSize',font_size);
+set(ax,'FontSize',font_size,'LineWidth',1.2);
 
 exportgraphics(hFig, outFile, 'Resolution', 300);
 fprintf('Saved merged figure to %s\n', outFile);

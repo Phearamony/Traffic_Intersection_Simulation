@@ -74,7 +74,7 @@ for trial = 1:N_TRIALS
 
     % Per-trial logs
     CarLog  = struct('Time',{},'ID',{},'Dir',{},'TurnLeft',{},'TurnRight',{},...
-                     'X',{},'Y',{},'V',{},'Ac',{});
+        'X',{},'Y',{},'V',{},'Ac',{});
     LightLog = struct('Time',{},'EW',{},'NS',{});
 
     % --- Simulation loop ---
@@ -225,47 +225,92 @@ if size(X_train,1) >= MIN_SAMPLES
 
     %% --- Diagnostic plots ---
     out_dir = fullfile(PROJECT_ROOT, 'output');
- 
-    fig = figure('Visible','off','Color','white','Position',[100 100 1200 420]);
 
-    % --- Panel 1: Predicted vs Actual ---
-    ax1 = subplot(1,3,1);
+    fig = figure('Visible','off','Color','white');
+    set(fig, 'Position', [100 100 1200 380]); % slightly shorter height
+
+    tiledlayout(fig,1,3,'TileSpacing','compact','Padding','compact');
+
+    font_axis  = 12;
+    font_label = 13;
+    font_title = 13;
+
+    %% ===== Panel 1: Predicted vs Actual =====
+    
+    ax1 = nexttile;
+
     scatter(y_true, y_pred, 12, y_sd, 'filled', 'MarkerFaceAlpha', 0.5);
     colormap(ax1, 'parula');
-    cb = colorbar; cb.Label.String = 'Std dev [s]';
+
+    cb1 = colorbar;
+    cb1.Label.String = 'Std dev [s]';
+    cb1.FontSize = font_axis;
+
     hold on;
     lims = [0, max(max(y_true), max(y_pred))*1.05];
     plot(lims, lims, 'r--', 'LineWidth', 1.5);
     hold off;
-    xlabel('Actual \tau [s]'); ylabel('Predicted \tau [s]');
-    title(sprintf('Predicted vs Actual\nRMSE=%.2fs  MAE=%.2fs', rmse, mae));
-    axis equal; xlim(lims); ylim(lims); grid on; box off;
 
-    % --- Panel 2: Residual distribution ---
-    ax2 = subplot(1,3,2);
+    xlabel('Actual \tau [s]', 'FontSize',font_label);
+    ylabel('Predicted \tau [s]', 'FontSize',font_label);
+
+    title(sprintf('Predicted vs Actual\nRMSE=%.2fs  MAE=%.2fs', rmse, mae), ...
+        'FontSize',font_title,'FontWeight','bold');
+
+    axis equal;
+    xlim(lims); ylim(lims);
+
+    grid on;
+    box on;
+    set(ax1,'FontSize',font_axis,'LineWidth',1.2);
+
+    %% ===== Panel 2: Residual =====
+    ax2 = nexttile;
+
     histogram(residuals, 40, 'Normalization','probability', ...
         'FaceColor',[0.20 0.60 0.86], 'EdgeColor','none', 'FaceAlpha',0.8);
-    xline(0, 'r--', 'LineWidth', 1.5);
-    xlabel('Residual \tau_{pred} - \tau_{true} [s]');
-    ylabel('Probability');
-    title(sprintf('Residual Distribution\nmean=%.2fs  std=%.2fs', ...
-        mean(residuals), std(residuals)));
-    grid on; box off;
 
-    % --- Panel 3: GPR surface at two representative gap values ---
-    ax3 = subplot(1,3,3);
+    xline(0, 'r--', 'LineWidth', 1.5);
+
+    xlabel('Residual \tau_{pred} - \tau_{true} [s]', 'FontSize',font_label);
+    ylabel('Probability', 'FontSize',font_label);
+
+    title(sprintf('Residual Distribution\nmean=%.2fs  std=%.2fs', ...
+        mean(residuals), std(residuals)), ...
+        'FontSize',font_title,'FontWeight','bold');
+
+    grid on;
+    box on;
+    set(ax2,'FontSize',font_axis,'LineWidth',1.2);
+
+    %% ===== Panel 3: GPR Surface =====
+    ax3 = nexttile;
+
     d_grid  = linspace(2, 140, 50);
     v_grid  = linspace(0, 25,  50);
     [D, V]  = meshgrid(d_grid, v_grid);
-    gap_rep = 8.0;   % representative gap: ~2 car lengths (typical queue spacing)
+
+    gap_rep = 8.0;
     G       = ones(size(D)) * gap_rep;
-    Z       = reshape(predict(gpr_model, [D(:), V(:), G(:)]), size(D));
+
+    Z = reshape(predict(gpr_model, [D(:), V(:), G(:)]), size(D));
+
     contourf(D, V, Z, 20, 'LineColor','none');
-    colormap(ax3, 'jet'); colorbar;
-    xlabel('Distance to stop line [m]');
-    ylabel('Velocity at green start [m/s]');
-    title(sprintf('GPR: Predicted \\tau [s]  (gap=%.0fm)', gap_rep));
-    grid on; box off;
+    colormap(ax3, 'jet');
+
+    cb2 = colorbar;
+    cb2.FontSize = font_axis;
+
+    xlabel('Distance to stop line [m]', 'FontSize',font_label);
+    ylabel('Velocity at green start [m/s]', 'FontSize',font_label);
+
+    title(sprintf('GPR Prediction (gap=%.0fm)', gap_rep), ...
+        'FontSize',font_title,'FontWeight','bold');
+
+    grid on;
+    box on;
+    set(ax3,'FontSize',font_axis,'LineWidth',1.2);
+
     hold on;
     n_dots = min(800, size(X_train,1));
     idx_d  = randperm(size(X_train,1), n_dots);
@@ -273,18 +318,18 @@ if size(X_train,1) >= MIN_SAMPLES
         'filled', 'MarkerFaceAlpha', 0.3);
     hold off;
 
-    sgtitle(sprintf('GPR Arrival-Time Model  |  %d training samples  |  %d trials', ...
-        size(X_train,1), N_TRIALS), 'FontSize',12,'FontWeight','bold');
+    %% ---- IMPORTANT: REMOVE GLOBAL TITLE ----
+    % (sgtitle removed)
 
-    set(findall(gcf,'-property','FontSize'),'FontSize',12);
-
+    %% ---- Export ----
     plot_path = fullfile(out_dir, 'gpr_model_diagnostics.png');
-    exportgraphics(fig, plot_path, 'Resolution', 150);
+    exportgraphics(fig, plot_path, 'Resolution', 300);
     fprintf('Diagnostic plot saved -> %s\n', plot_path);
+
     close(fig);
 else
     warning('Only %d samples collected - need at least %d. Increase N_TRIALS.', ...
-            size(X_train,1), MIN_SAMPLES);
+        size(X_train,1), MIN_SAMPLES);
 end
 
 fprintf('\nDone. You can now run main_v2v_idm_rsu_gpr.m or main_v2v_mpc_rsu_gpr.m\n');
@@ -292,81 +337,81 @@ fprintf('\nDone. You can now run main_v2v_idm_rsu_gpr.m or main_v2v_mpc_rsu_gpr.
 %% ===== LOCAL HELPER FUNCTIONS =====
 
 function sched = generateSchedule(KKmax, dt, stages, lamNS, lamEW)
-    dirs = {'N','S','E','W'};
-    sched.KKmax = KKmax; sched.dt = dt;
+dirs = {'N','S','E','W'};
+sched.KKmax = KKmax; sched.dt = dt;
+for di=1:4, d=dirs{di};
+    sched.([d '_intent'])   = false(1,KKmax);
+    sched.([d '_TurnLeft']) = false(1,KKmax);
+    sched.([d '_TurnRight'])= false(1,KKmax);
+    sched.([d '_Vd'])       = zeros(1,KKmax);
+    sched.([d '_Th'])       = zeros(1,KKmax);
+end
+for kk=1:KKmax
+    tsec=kk*dt;
+    if     tsec < stages(2), k=1;
+    elseif tsec < stages(3), k=2;
+    else,                    k=3; end
+    lams=[0.5*lamNS(k), 0.5*lamNS(k), 0.5*lamEW(k), 0.5*lamEW(k)];
     for di=1:4, d=dirs{di};
-        sched.([d '_intent'])   = false(1,KKmax);
-        sched.([d '_TurnLeft']) = false(1,KKmax);
-        sched.([d '_TurnRight'])= false(1,KKmax);
-        sched.([d '_Vd'])       = zeros(1,KKmax);
-        sched.([d '_Th'])       = zeros(1,KKmax);
+        p = 1-exp(-lams(di)*dt);
+        sched.([d '_intent'])(kk)    = rand < p;
+        tl = rand < 0.25;
+        tr = false; if ~tl, tr = rand < 0.15; end
+        sched.([d '_TurnLeft'])(kk)  = tl;
+        sched.([d '_TurnRight'])(kk) = tr;
+        sched.([d '_Vd'])(kk)        = 21 + 6*rand + 2;
+        sched.([d '_Th'])(kk)        = 1.2 + 1.2*rand;
     end
-    for kk=1:KKmax
-        tsec=kk*dt;
-        if     tsec < stages(2), k=1;
-        elseif tsec < stages(3), k=2;
-        else,                    k=3; end
-        lams=[0.5*lamNS(k), 0.5*lamNS(k), 0.5*lamEW(k), 0.5*lamEW(k)];
-        for di=1:4, d=dirs{di};
-            p = 1-exp(-lams(di)*dt);
-            sched.([d '_intent'])(kk)    = rand < p;
-            tl = rand < 0.25;
-            tr = false; if ~tl, tr = rand < 0.15; end
-            sched.([d '_TurnLeft'])(kk)  = tl;
-            sched.([d '_TurnRight'])(kk) = tr;
-            sched.([d '_Vd'])(kk)        = 21 + 6*rand + 2;
-            sched.([d '_Th'])(kk)        = 1.2 + 1.2*rand;
-        end
-    end
+end
 end
 
 function carList = idmAccel(carList, dir, isRed, stop_line, dummy)
-    for i = 1:length(carList)
-        car = carList(i);
-        lead = [];
-        minD = inf;
-        for j = 1:length(carList)
-            if j==i, continue; end
-            switch dir
-                case 'N', d=carList(j).Y - car.Y;
-                case 'S', d=car.Y - carList(j).Y;
-                case 'E', d=carList(j).X - car.X;
-                case 'W', d=car.X - carList(j).X;
-            end
-            if d>0 && d<minD, minD=d; lead=carList(j); end
+for i = 1:length(carList)
+    car = carList(i);
+    lead = [];
+    minD = inf;
+    for j = 1:length(carList)
+        if j==i, continue; end
+        switch dir
+            case 'N', d=carList(j).Y - car.Y;
+            case 'S', d=car.Y - carList(j).Y;
+            case 'E', d=carList(j).X - car.X;
+            case 'W', d=car.X - carList(j).X;
         end
-        isBefore = isBeforeStop(car, dir, stop_line);
-        if isRed && isBefore
-            if ~isempty(lead) && isBeforeStop(lead, dir, stop_line)
-                car.Ac = Car.IDM(car, lead);
-            else
-                switch dir
-                    case 'N', dummy.Y = -stop_line + car.R0;
-                    case 'S', dummy.Y =  stop_line - car.R0;
-                    case 'E', dummy.X = -stop_line + car.R0;
-                    case 'W', dummy.X =  stop_line - car.R0;
-                end
-                car.Ac = Car.IDM(car, dummy);
-            end
-        else
-            if ~isempty(lead)
-                car.Ac = Car.IDM(car, lead);
-            else
-                car.Ac = 0.5*(car.Vd - car.V);
-            end
-        end
-        carList(i) = car;
+        if d>0 && d<minD, minD=d; lead=carList(j); end
     end
+    isBefore = isBeforeStop(car, dir, stop_line);
+    if isRed && isBefore
+        if ~isempty(lead) && isBeforeStop(lead, dir, stop_line)
+            car.Ac = Car.IDM(car, lead);
+        else
+            switch dir
+                case 'N', dummy.Y = -stop_line + car.R0;
+                case 'S', dummy.Y =  stop_line - car.R0;
+                case 'E', dummy.X = -stop_line + car.R0;
+                case 'W', dummy.X =  stop_line - car.R0;
+            end
+            car.Ac = Car.IDM(car, dummy);
+        end
+    else
+        if ~isempty(lead)
+            car.Ac = Car.IDM(car, lead);
+        else
+            car.Ac = 0.5*(car.Vd - car.V);
+        end
+    end
+    carList(i) = car;
+end
 end
 
 function b = isBeforeStop(car, dir, sl)
-    switch dir
-        case 'N', b = car.Y < -sl;
-        case 'S', b = car.Y >  sl;
-        case 'E', b = car.X < -sl;
-        case 'W', b = car.X >  sl;
-        otherwise, b = true;
-    end
+switch dir
+    case 'N', b = car.Y < -sl;
+    case 'S', b = car.Y >  sl;
+    case 'E', b = car.X < -sl;
+    case 'W', b = car.X >  sl;
+    otherwise, b = true;
+end
 end
 
 function [X, y] = extractGPRSamples(CarLog, LightLog, stop_line)
@@ -379,121 +424,121 @@ function [X, y] = extractGPRSamples(CarLog, LightLog, stop_line)
 % and predicts arrival times from vehicles' current states.
 % Stopped vehicles (vel~0, queued at red) are naturally included.
 
-    X = zeros(0,3);  y = zeros(0,1);   % inputs: [dist, vel, gap_to_lead]
-    if isempty(CarLog) || isempty(LightLog), return; end
+X = zeros(0,3);  y = zeros(0,1);   % inputs: [dist, vel, gap_to_lead]
+if isempty(CarLog) || isempty(LightLog), return; end
 
-    n_log = length(LightLog);
+n_log = length(LightLog);
 
-    % Find green-start timesteps for EW and NS axes
-    green_starts_EW = [];
-    green_starts_NS = [];
-    for k = 2:n_log
-        if strcmp(LightLog(k).EW,'green') && ~strcmp(LightLog(k-1).EW,'green')
-            green_starts_EW(end+1) = LightLog(k).Time;
-        end
-        if strcmp(LightLog(k).NS,'green') && ~strcmp(LightLog(k-1).NS,'green')
-            green_starts_NS(end+1) = LightLog(k).Time;
-        end
+% Find green-start timesteps for EW and NS axes
+green_starts_EW = [];
+green_starts_NS = [];
+for k = 2:n_log
+    if strcmp(LightLog(k).EW,'green') && ~strcmp(LightLog(k-1).EW,'green')
+        green_starts_EW(end+1) = LightLog(k).Time;
     end
+    if strcmp(LightLog(k).NS,'green') && ~strcmp(LightLog(k-1).NS,'green')
+        green_starts_NS(end+1) = LightLog(k).Time;
+    end
+end
 
-    all_times = [CarLog.Time];
-    all_ids   = [CarLog.ID];
+all_times = [CarLog.Time];
+all_ids   = [CarLog.ID];
 
-    % Combine EW and NS green starts into one list
-    axes_list  = [repmat({'EW'}, 1, length(green_starts_EW)), ...
-                  repmat({'NS'}, 1, length(green_starts_NS))];
-    times_list = [green_starts_EW, green_starts_NS];
+% Combine EW and NS green starts into one list
+axes_list  = [repmat({'EW'}, 1, length(green_starts_EW)), ...
+    repmat({'NS'}, 1, length(green_starts_NS))];
+times_list = [green_starts_EW, green_starts_NS];
 
-    for gi = 1:length(times_list)
-        green_t = times_list(gi);
-        axis    = axes_list{gi};
+for gi = 1:length(times_list)
+    green_t = times_list(gi);
+    axis    = axes_list{gi};
 
-        % Snapshot: all vehicles logged at this green-start timestep
-        snap = CarLog(all_times == green_t);
+    % Snapshot: all vehicles logged at this green-start timestep
+    snap = CarLog(all_times == green_t);
 
-        for ai = 1:length(snap)
-            vdir = snap(ai).Dir;
+    for ai = 1:length(snap)
+        vdir = snap(ai).Dir;
 
-            % Skip turning vehicles — straight-going only
-            if snap(ai).TurnRight || snap(ai).TurnLeft, continue; end
+        % Skip turning vehicles — straight-going only
+        if snap(ai).TurnRight || snap(ai).TurnLeft, continue; end
 
-            % Direction must match this axis
-            if strcmp(axis,'EW') && ~(strcmp(vdir,'E') || strcmp(vdir,'W')), continue; end
-            if strcmp(axis,'NS') && ~(strcmp(vdir,'N') || strcmp(vdir,'S')), continue; end
+        % Direction must match this axis
+        if strcmp(axis,'EW') && ~(strcmp(vdir,'E') || strcmp(vdir,'W')), continue; end
+        if strcmp(axis,'NS') && ~(strcmp(vdir,'N') || strcmp(vdir,'S')), continue; end
 
-            % Distance to stop line at green start
+        % Distance to stop line at green start
+        switch vdir
+            case 'E', dk = -stop_line - snap(ai).X;
+            case 'W', dk =  snap(ai).X - stop_line;
+            case 'N', dk = -stop_line - snap(ai).Y;
+            case 'S', dk =  snap(ai).Y - stop_line;
+            otherwise, continue;
+        end
+        if dk <= 0 || dk > 200, continue; end  % already past stop or out of range
+        velk = snap(ai).V;                     % velocity at green start (may be 0)
+        vid  = snap(ai).ID;                    % must be defined before gap loop
+
+        % Gap to nearest lead vehicle (same direction, closer to stop line)
+        % If no lead: gap = dk (free-flow condition)
+        min_lead_dist = Inf;
+        for aj = 1:length(snap)
+            if snap(aj).ID == vid, continue; end
+            if ~strcmp(snap(aj).Dir, vdir), continue; end
+            if snap(aj).TurnRight || snap(aj).TurnLeft, continue; end
             switch vdir
-                case 'E', dk = -stop_line - snap(ai).X;
-                case 'W', dk =  snap(ai).X - stop_line;
-                case 'N', dk = -stop_line - snap(ai).Y;
-                case 'S', dk =  snap(ai).Y - stop_line;
+                case 'E', dk_lead = -stop_line - snap(aj).X;
+                case 'W', dk_lead =  snap(aj).X - stop_line;
+                case 'N', dk_lead = -stop_line - snap(aj).Y;
+                case 'S', dk_lead =  snap(aj).Y - stop_line;
                 otherwise, continue;
             end
-            if dk <= 0 || dk > 200, continue; end  % already past stop or out of range
-            velk = snap(ai).V;                     % velocity at green start (may be 0)
-            vid  = snap(ai).ID;                    % must be defined before gap loop
-
-            % Gap to nearest lead vehicle (same direction, closer to stop line)
-            % If no lead: gap = dk (free-flow condition)
-            min_lead_dist = Inf;
-            for aj = 1:length(snap)
-                if snap(aj).ID == vid, continue; end
-                if ~strcmp(snap(aj).Dir, vdir), continue; end
-                if snap(aj).TurnRight || snap(aj).TurnLeft, continue; end
-                switch vdir
-                    case 'E', dk_lead = -stop_line - snap(aj).X;
-                    case 'W', dk_lead =  snap(aj).X - stop_line;
-                    case 'N', dk_lead = -stop_line - snap(aj).Y;
-                    case 'S', dk_lead =  snap(aj).Y - stop_line;
-                    otherwise, continue;
-                end
-                % Lead must be between vehicle and stop line (smaller dist, still before stop)
-                if dk_lead > 0 && dk_lead < dk && dk_lead < min_lead_dist
-                    min_lead_dist = dk_lead;
-                end
+            % Lead must be between vehicle and stop line (smaller dist, still before stop)
+            if dk_lead > 0 && dk_lead < dk && dk_lead < min_lead_dist
+                min_lead_dist = dk_lead;
             end
-            if isinf(min_lead_dist)
-                gap_k = dk;              % no lead vehicle: free-flow
-            else
-                gap_k = max(dk - min_lead_dist - 4.0, 0);  % 4m = vehicle length
-            end
-
-            % Find this vehicle's future log entries (after green_t)
-            vid_mask = (all_ids == vid) & (all_times > green_t);
-            vid_log  = CarLog(vid_mask);
-            if isempty(vid_log), continue; end
-
-            % Find first timestep where vehicle crossed the stop line
-            t_cross = [];
-            for si = 1:length(vid_log)
-                switch vdir
-                    case 'E', d_si = -stop_line - vid_log(si).X;
-                    case 'W', d_si =  vid_log(si).X - stop_line;
-                    case 'N', d_si = -stop_line - vid_log(si).Y;
-                    case 'S', d_si =  vid_log(si).Y - stop_line;
-                end
-                if d_si <= 0
-                    t_cross = vid_log(si).Time;
-                    break;
-                end
-            end
-
-            if isempty(t_cross), continue; end
-            tauk = t_cross - green_t;
-            if tauk <= 0 || tauk > 120, continue; end
-
-            X(end+1,:) = [dk, velk, gap_k];
-            y          = [y; tauk];
         end
+        if isinf(min_lead_dist)
+            gap_k = dk;              % no lead vehicle: free-flow
+        else
+            gap_k = max(dk - min_lead_dist - 4.0, 0);  % 4m = vehicle length
+        end
+
+        % Find this vehicle's future log entries (after green_t)
+        vid_mask = (all_ids == vid) & (all_times > green_t);
+        vid_log  = CarLog(vid_mask);
+        if isempty(vid_log), continue; end
+
+        % Find first timestep where vehicle crossed the stop line
+        t_cross = [];
+        for si = 1:length(vid_log)
+            switch vdir
+                case 'E', d_si = -stop_line - vid_log(si).X;
+                case 'W', d_si =  vid_log(si).X - stop_line;
+                case 'N', d_si = -stop_line - vid_log(si).Y;
+                case 'S', d_si =  vid_log(si).Y - stop_line;
+            end
+            if d_si <= 0
+                t_cross = vid_log(si).Time;
+                break;
+            end
+        end
+
+        if isempty(t_cross), continue; end
+        tauk = t_cross - green_t;
+        if tauk <= 0 || tauk > 120, continue; end
+
+        X(end+1,:) = [dk, velk, gap_k];
+        y          = [y; tauk];
     end
+end
 end
 
 function ok = canSpawnY(list, y0, gap)
-    if isempty(list), ok=true; return; end
-    ok = all(abs([list.Y]-y0) >= gap);
+if isempty(list), ok=true; return; end
+ok = all(abs([list.Y]-y0) >= gap);
 end
 
 function ok = canSpawnX(list, x0, gap)
-    if isempty(list), ok=true; return; end
-    ok = all(abs([list.X]-x0) >= gap);
+if isempty(list), ok=true; return; end
+ok = all(abs([list.X]-x0) >= gap);
 end
