@@ -405,7 +405,7 @@ res_mat(1:ns(1),1) = res_N;
 res_mat(1:ns(2),2) = res_IDM;
 res_mat(1:ns(3),3) = res_GPR;
 bp = boxplot(res_mat,'Labels',{'Naive','IDM','GPR'}, ...
-             'Colors',cell2mat(COLS'),'Symbol','.'); %#ok<NASGU>
+             'Colors',cell2mat(COLS'),'Symbol','.'); 
 set(findobj(gcf,'type','line'),'LineWidth',1.5);
 yline(0,'k--','LineWidth',1.4);
 ylabel('Residual [s]','FontSize',11);
@@ -423,6 +423,7 @@ exportgraphics(fig2, fullfile(out_dir,'estimator_comparison_residuals.png'), 'Re
 fprintf('Residual plot saved → output/estimator_comparison_residuals.png\n');
 fprintf('Raw data saved      → output/estimator_comparison_results.mat\n\n');
 close(fig2);
+
 
 %% ═══════════════════════════════════════════════════════════════════════════
 %% LOCAL HELPER FUNCTIONS

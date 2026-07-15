@@ -982,6 +982,8 @@ out_base = fileparts(mfilename('fullpath'));
 fuel_out = fullfile(out_base, '..', 'output', 'fuel_idm.png');
 plot_fuel_consumption(FuelLog, 'V2X + IDM', fuel_out);
 
+collect_ablation_metrics(FuelLog, 'C1_IDM');
+
 
 %% === Helper Functions ===
 function t_turn = estimateTurnTime(car, turn_release, turn_wait, turn_waitX, turn_waitY)

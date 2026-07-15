@@ -1346,6 +1346,8 @@ out_base = fileparts(mfilename('fullpath'));
 fuel_out = fullfile(out_base, '..', 'output', 'fuel_mpc.png');
 plot_fuel_consumption(FuelLog, 'V2X + MPC', fuel_out);
 
+collect_ablation_metrics(FuelLog, 'C3_mpc');
+
 %% === Helper Functions ===
 function t_turn = estimateTurnTime(car, turn_release, turn_wait, turn_waitX, turn_waitY)
 % estimateTurnTime - Estimate time needed to complete a right turn

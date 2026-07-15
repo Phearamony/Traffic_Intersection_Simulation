@@ -1613,6 +1613,7 @@ out_base = fileparts(mfilename('fullpath'));
 fuel_out = fullfile(out_base, '..', 'output', 'fuel_idm_rsu.png');
 plot_fuel_consumption(FuelLog, 'V2X + IDM + RSU', fuel_out);
 
+collect_ablation_metrics(FuelLog, 'C2_idm_rsu');
 
 %% === Helper Functions ===
 function [lamN, lamS, lamE, lamW] = getApproachRates(tsec, stages, lamNS_axis, lamEW_axis)

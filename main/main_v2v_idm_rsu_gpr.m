@@ -1621,6 +1621,7 @@ out_base = fileparts(mfilename('fullpath'));
 fuel_out = fullfile(out_base, '..', 'output', 'fuel_idm_rsu_gpr.png');
 plot_fuel_consumption(FuelLog, 'V2X + IDM + RSU (GPR)', fuel_out);
 
+collect_ablation_metrics(FuelLog, 'C2G_idm_rsu_gpr');
 
 %% === Helper Functions ===
 function [lamN, lamS, lamE, lamW] = getApproachRates(tsec, stages, lamNS_axis, lamEW_axis)
