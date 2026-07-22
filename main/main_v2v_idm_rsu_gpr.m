@@ -7,6 +7,8 @@
 clear classes %#ok<CLCLS>
 close all; clear; clc;
 
+rng(1);
+
 % addpath
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/class'))
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/function'))

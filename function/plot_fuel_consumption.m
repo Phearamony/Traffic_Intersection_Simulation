@@ -6,7 +6,7 @@ if isempty(FuelLog)
 end
 
 %% ---- Partition ----
-is_rt  = logical([FuelLog.TurnRight]);
+is_rt  = logical([FuelLog.TurnedRight]);
 is_str = ~is_rt;
 
 fuel_rt  = [FuelLog(is_rt ).fuel_total];

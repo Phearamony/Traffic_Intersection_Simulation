@@ -2,6 +2,8 @@
 close all; clear; clc;
 clear global RSUObjs
 
+rng(1);
+
 % addpath
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/class'))
 addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/function'))
