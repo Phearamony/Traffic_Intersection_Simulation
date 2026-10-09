@@ -4,7 +4,7 @@ MATLAB simulation for my master's research at **Gunma University (Kamal Laborato
 Connected and Automated Vehicles (CAVs) can turn right efficiently at signalized intersections in
 **left-hand traffic** (Japan).
 
-📄 **Paper:** [Learning-Based Optimal Right-Turn Coordination System for Connected and Automated Vehicles at Intersections](paper/Phan_SICE2026_Right-Turn_Coordination.pdf)
+📄 **Paper:** [Learning-Based Optimal Right-Turn Coordination System for Connected and Automated Vehicles at Intersections](https://drive.google.com/file/d/1eD-5lxTvvwlGY6lJCwVpVNrC4kos1YCi/view?usp=sharing)
 *Phearamony Phan, Mahmudul Hasan, A. S. M. Bakibillah, Md Abdus Samad Kamal, Kou Yamada*.
 SICE Festival 2026 (SICE Annual Conference), Yokohama, Japan.
 
@@ -62,7 +62,6 @@ function/   IDM, trajectory / acceleration / fuel plotting, ablation metrics
 main/       Simulation entry points (one script per configuration)
 simplot/    Intersection drawing, initial values, trained GPR model, shared traffic schedule
 output/     Generated figures, videos and ablation summary
-paper/      Conference paper (PDF)
 ```
 
 ### Main scripts
