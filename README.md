@@ -68,7 +68,9 @@ output/     Generated figures, videos and ablation summary
 
 | Script | Configuration |
 |---|---|
-| `main/main_human_driving.m` | C1: uncoordinated human driving (IDM + noise) |
+| `main/main_human_driving.m` | Generates the shared traffic schedule for the current seed (and runs C1) |
+| `main/main_human_driving_plot.m` | C1: uncoordinated human driving (IDM + noise), writes the C1 metrics |
+| `main/run_ablation.m` | Runs every configuration over many seeds and summarizes the results |
 | `main/main_v2v_idm.m` | V2V-only IDM baseline |
 | `main/main_v2v_idm_rsu.m` | C2: IDM + RSU (IDM estimator) |
 | `main/main_v2v_idm_rsu_gpr.m` | C2G: IDM + RSU (GPR estimator) |
@@ -90,9 +92,51 @@ cd main
 demo_main          % quick visual demo of the proposed system
 ```
 
-The demo adds `class/`, `function/` and `simplot/` to the path automatically. The other `main_*.m`
-scripts use absolute `addpath` lines from my machine, so change them to your clone location before
-running them.
+Every `main_*.m` script now finds the repo folders from its own location, so no path edits are needed.
+
+## Journal experiments (multi-seed ablation)
+
+Run order, from the MATLAB command window in `main/`:
+
+```matlab
+main_human_driving_gpr_train      % 1. train GPR on seeds 1-16, test on held-out seeds 17-20
+                                  %    -> simplot/gpr_arrival_model.mat, output/gpr_holdout_metrics.csv
+delete ../output/ablation_runs.csv            % 2. start a fresh study (if the file exists)
+delete ../output/estimator_runs.csv
+run_ablation(101:120, 720, true)  % 3. 20 seeds x all configurations, 360 s each,
+                                  %    plus the estimator comparison per seed
+```
+
+`run_ablation` writes:
+
+| File | Content |
+|---|---|
+| `output/ablation_runs.csv` | one row per (seed, configuration): fuel, idle time, completion, throughput, right-turn separation |
+| `output/ablation_stats.csv` | per configuration and metric: n, mean, std, 95% CI |
+| `output/ablation_pairs.csv` | paired comparisons over seeds: mean difference, 95% CI, Wilcoxon and paired t-test p-values |
+| `output/estimator_runs.csv` | per seed and estimator: RMSE, MAE, bias, share within 2 s / 5 s, failure rate, on each estimator's own samples and on the common sample set |
+| `output/ablation_errors.log` | any run that failed, with the error |
+
+Settings come from `function/abl_settings.m` (environment variables `ABL_SEED`, `ABL_KKMAX`, `ABL_PLOT`,
+`ABL_VREC`). Running a single script by hand still works: it uses seed 1, 720 steps and live plots.
+**Run `main_human_driving.m` first** whenever you change the seed or the horizon, because it regenerates
+`simplot/traffic_schedule.mat`.
+
+Changes made for the journal version:
+
+* All configurations, including the baselines, use the east-west corridor only, so every row of the
+  ablation sees the same vehicles.
+* The horizon is 720 steps (360 s), so the heavy demand stage (from 300 s) is reached.
+* Fuel and idle averages use complete trips only (vehicles that left the model); vehicles still inside at
+  the end are counted separately.
+* RSU slot times are aged since the optimisation ran, so a slot "5 s from now" counts down.
+* Vehicles follow the RSU recommended speed (`Car.EffVd`, `RSU.YieldAdvisory`): right-turners slow down to
+  arrive at their slot, and opposing vehicles delayed by a slot get a yield advisory.
+* A right-turner is released only if no opposing through vehicle is inside the junction or predicted to
+  reach its stop line within 2 s (`RSU.OpposingClear`).
+* The GPR test metrics use whole held-out seeds instead of samples drawn from the training set.
+* `compute_turn_safety` reports the time separation between each right turn and the nearest opposing
+  through vehicle at the junction centre.
 
 ## Related repositories
 

@@ -1,12 +1,17 @@
 %% 4-Way Intersection Simulation
-close all; clear; clc;
-clear global RSUObjs
 
-% addpath
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/class'))
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/function'))
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/simplot'))
-PROJECT_ROOT = 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection';
+% ---- run settings (see function/abl_settings.m) ----
+if ~strcmp(getenv('ABL_BATCH'), '1')
+    close all; clear; clc;
+end
+clear global RSUObjs
+ROOT_ = fileparts(fileparts(mfilename('fullpath')));
+addpath(genpath(fullfile(ROOT_, 'class')))
+addpath(genpath(fullfile(ROOT_, 'function')))
+addpath(genpath(fullfile(ROOT_, 'simplot')))
+S_ = abl_settings();
+rng(S_.seed);
+PROJECT_ROOT = ROOT_;
 
 global CarN CarS CarE CarW TrafficLight
 global dt KK
@@ -14,7 +19,14 @@ global dt KK
 InitVals;
 fm = 1;
 dt = 0.5;
-KKmax = 500; %3000 = 25mn
+KKmax = S_.KKmax;   % default 720 steps = 360 s (abl_settings)
+
+% Active approaches. The journal ablation uses the east-west corridor only,
+% so every configuration sees the same vehicles.
+CARN = false;
+CARS = false;
+CARE = true;
+CARW = true;
 
 % --- Traffic light parameters (time-based) ---
 Cycle = 120;           % seconds
@@ -137,32 +149,40 @@ fprintf('  Total arrival intentions: N=%d  S=%d  E=%d  W=%d\n', ...
 
 %% === Initialize new cars===
 % SOUTH → NORTH (drive left, so +X)
-carN = Car(CarIDN, -1.5, -150);
-CarIDN = CarIDN + 1;
-carN.Dir = 'N';
-CarN(end+1) = carN;
+if CARN
+    carN = Car(CarIDN, -1.5, -150);
+    CarIDN = CarIDN + 1;
+    carN.Dir = 'N';
+    CarN(end+1) = carN;
+end
 
 % NORTH → SOUTH (drive left, so -X)
-carS = Car(CarIDS, 1.5, 150);
-CarIDS = CarIDS + 1;
-carS.Dir = 'S';
-CarS(end+1) = carS;
+if CARS
+    carS = Car(CarIDS, 1.5, 150);
+    CarIDS = CarIDS + 1;
+    carS.Dir = 'S';
+    CarS(end+1) = carS;
+end
 
 % WEST → EAST (drive left, so +Y)
-carE = Car(CarIDE, -150, 1.5);
-CarIDE = CarIDE + 1;
-carE.Dir = 'E';
-CarE(end+1) = carE;
+if CARE
+    carE = Car(CarIDE, -150, 1.5);
+    CarIDE = CarIDE + 1;
+    carE.Dir = 'E';
+    CarE(end+1) = carE;
+end
 
 % EAST → WEST (drive left, so -Y)
-carW = Car(CarIDW, 150, -1.5);
-CarIDW = CarIDW + 1;
-carW.Dir = 'W';
-CarW(end+1) = carW;
+if CARW
+    carW = Car(CarIDW, 150, -1.5);
+    CarIDW = CarIDW + 1;
+    carW.Dir = 'W';
+    CarW(end+1) = carW;
+end
 
 
 % --- Fuel & idle log (one entry per completed vehicle trip) ---
-FuelLog = struct('ID',{},'Dir',{},'TurnRight',{},'TurnedRight',{}, ...
+FuelLog = struct('ID',{},'Dir',{},'TurnRight',{},'TurnedRight',{},'TurnLeft',{},'Exited',{}, ...
     'fuel_total',{},'idle_gap_time',{},'idle_red_time',{});
 
 for KK = 1:KKmax
@@ -197,7 +217,7 @@ for KK = 1:KKmax
 
     %% === Plot ===
     if(mod(KK,2)==1)
-        SimPlotIntersection;
+        if S_.plot, SimPlotIntersection; end
     end
 
     %% === Spawn new cars (from pre-generated schedule) ===
@@ -207,7 +227,7 @@ for KK = 1:KKmax
     % so vehicle characteristics are also identical across scenarios.
 
     % NORTH (spawn at Y=-150, moving +Y)
-    if sched.N_intent(KK) && canSpawnY(CarN, -150, spawn_gap_min)
+    if CARN && sched.N_intent(KK) && canSpawnY(CarN, -150, spawn_gap_min)
         carN = Car(CarIDN, -1.5, -150); CarIDN = CarIDN + 1;
         carN.Dir = 'N';
         carN.TurnLeft = sched.N_TurnLeft(KK);  carN.TurnRight = sched.N_TurnRight(KK);
@@ -216,7 +236,7 @@ for KK = 1:KKmax
     end
 
     % SOUTH (spawn at Y=+150, moving -Y)
-    if sched.S_intent(KK) && canSpawnY(CarS, 150, spawn_gap_min)
+    if CARS && sched.S_intent(KK) && canSpawnY(CarS, 150, spawn_gap_min)
         carS = Car(CarIDS, 1.5, 150); CarIDS = CarIDS + 1;
         carS.Dir = 'S';
         carS.TurnLeft = sched.S_TurnLeft(KK);  carS.TurnRight = sched.S_TurnRight(KK);
@@ -225,7 +245,7 @@ for KK = 1:KKmax
     end
 
     % EAST (spawn at X=-150, moving +X)
-    if sched.E_intent(KK) && canSpawnX(CarE, -150, spawn_gap_min)
+    if CARE && sched.E_intent(KK) && canSpawnX(CarE, -150, spawn_gap_min)
         carE = Car(CarIDE, -150, 1.5); CarIDE = CarIDE + 1;
         carE.Dir = 'E';
         carE.TurnLeft = sched.E_TurnLeft(KK);  carE.TurnRight = sched.E_TurnRight(KK);
@@ -234,7 +254,7 @@ for KK = 1:KKmax
     end
 
     % WEST (spawn at X=+150, moving -X)
-    if sched.W_intent(KK) && canSpawnX(CarW, 150, spawn_gap_min)
+    if CARW && sched.W_intent(KK) && canSpawnX(CarW, 150, spawn_gap_min)
         carW = Car(CarIDW, 150, -1.5); CarIDW = CarIDW + 1;
         carW.Dir = 'W';
         carW.TurnLeft = sched.W_TurnLeft(KK);  carW.TurnRight = sched.W_TurnRight(KK);
@@ -1026,10 +1046,10 @@ for KK = 1:KKmax
     exitMaskS = abs([CarS.X]) > 170 | abs([CarS.Y]) > 170;
     exitMaskE = abs([CarE.X]) > 170 | abs([CarE.Y]) > 170;
     exitMaskW = abs([CarW.X]) > 170 | abs([CarW.Y]) > 170;
-    for idx = find(exitMaskN), FuelLog(end+1) = fuelEntry(CarN(idx)); end
-    for idx = find(exitMaskS), FuelLog(end+1) = fuelEntry(CarS(idx)); end
-    for idx = find(exitMaskE), FuelLog(end+1) = fuelEntry(CarE(idx)); end
-    for idx = find(exitMaskW), FuelLog(end+1) = fuelEntry(CarW(idx)); end
+    for idx = find(exitMaskN), FuelLog(end+1) = fuelEntry(CarN(idx), true); end
+    for idx = find(exitMaskS), FuelLog(end+1) = fuelEntry(CarS(idx), true); end
+    for idx = find(exitMaskE), FuelLog(end+1) = fuelEntry(CarE(idx), true); end
+    for idx = find(exitMaskW), FuelLog(end+1) = fuelEntry(CarW(idx), true); end
 
     %% === Remove cars out of bounds ===
     % N
@@ -1044,23 +1064,20 @@ end
 
 
 %% === Plot ===
-plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_human.png');
-plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/NS_human.png');
-
-%plot_EW_accelerations(LightLog, CarLogS, CarLogN, stop_line, 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output/EW_human_ac.png');
+if S_.plot, plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, fullfile(ROOT_, 'output/EW_human.png')); end
+if S_.plot, plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, fullfile(ROOT_, 'output/NS_human.png')); end
+%plot_EW_accelerations(LightLog, CarLogS, CarLogN, stop_line, fullfile(ROOT_, 'output/EW_human_ac.png'));
 
 % Collect fuel stats from cars still on grid at end of simulation
-for idx = 1:length(CarN), FuelLog(end+1) = fuelEntry(CarN(idx)); end
-for idx = 1:length(CarS), FuelLog(end+1) = fuelEntry(CarS(idx)); end
-for idx = 1:length(CarE), FuelLog(end+1) = fuelEntry(CarE(idx)); end
-for idx = 1:length(CarW), FuelLog(end+1) = fuelEntry(CarW(idx)); end
+for idx = 1:length(CarN), FuelLog(end+1) = fuelEntry(CarN(idx), false); end
+for idx = 1:length(CarS), FuelLog(end+1) = fuelEntry(CarS(idx), false); end
+for idx = 1:length(CarE), FuelLog(end+1) = fuelEntry(CarE(idx), false); end
+for idx = 1:length(CarW), FuelLog(end+1) = fuelEntry(CarW(idx), false); end
 
 % Plot fuel consumption & idle analysis
 out_base = fileparts(mfilename('fullpath'));
 fuel_out = fullfile(out_base, '..', 'output', 'fuel_human.png');
-plot_fuel_consumption(FuelLog, 'Human Driving', fuel_out);
-
-
+if S_.plot, plot_fuel_consumption(FuelLog, 'Human Driving', fuel_out); end
 %% === Helper Functions ===
 function t_turn = estimateTurnTime(car, turn_release, turn_wait, turn_waitX, turn_waitY)
 % estimateTurnTime - Estimate time needed to complete a right turn
@@ -1178,10 +1195,11 @@ function clear = isSpawnClear(carList, axis, spawnPos, safeGap)
     end
 end
 
-function s = fuelEntry(car)
+function s = fuelEntry(car, exited)
 % Pack a car's fuel & idle counters into a FuelLog struct row.
 s = struct('ID', car.ID, 'Dir', car.Dir, ...
     'TurnRight', car.TurnRight, 'TurnedRight', car.TurnedRight, ...
+    'TurnLeft', car.TurnLeft, 'Exited', exited, ...
     'fuel_total',    car.fuel_total, ...
     'idle_gap_time', car.idle_gap_time, ...
     'idle_red_time', car.idle_red_time);

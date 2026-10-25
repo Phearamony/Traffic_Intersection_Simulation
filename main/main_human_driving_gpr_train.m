@@ -8,16 +8,21 @@
 %
 % Run order: this file first, then main_v2v_idm_rsu_gpr.m / main_v2v_mpc_rsu_gpr.m.
 
-clear classes %#ok<CLCLS>
-close all; clear; clc;
-
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/class'))
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/function'))
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/simplot'))
-PROJECT_ROOT = 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection';
+% ---- run settings (see function/abl_settings.m) ----
+if ~strcmp(getenv('ABL_BATCH'), '1')
+    clear classes %#ok<CLCLS>
+    close all; clear; clc;
+end
+ROOT_ = fileparts(fileparts(mfilename('fullpath')));
+addpath(genpath(fullfile(ROOT_, 'class')))
+addpath(genpath(fullfile(ROOT_, 'function')))
+addpath(genpath(fullfile(ROOT_, 'simplot')))
+S_ = abl_settings();
+PROJECT_ROOT = ROOT_;
 
 %% ===== SETTINGS =====
-N_TRIALS = 20;      % number of independent simulation runs to accumulate data
+N_TRIALS = 20;      % number of independent simulation runs (seeds 1..N_TRIALS)
+N_TEST   = 4;       % last N_TEST seeds are held out: never used for fitting, only for the test metrics
 KKmax    = 3000;    % timesteps per trial (600 x 0.5s = 5 min)
 dt_val   = 0.5;    % simulation timestep [s]
 
@@ -40,8 +45,9 @@ out_eps      = 0.5;
 appear       = 3;
 
 % Training data accumulators
-X_train = zeros(0, 2);   % [dist_to_stop_line, velocity]
-y_train = zeros(0, 1);   % tau (s to stop-line crossing)
+X_all = zeros(0, 3);     % [dist_to_stop_line, velocity, gap_to_lead]
+y_all = zeros(0, 1);     % tau (s from green start to stop-line crossing)
+trial_all = zeros(0, 1); % seed of the trial each sample came from
 
 fprintf('=== GPR Training: %d trials x %d timesteps ===\n', N_TRIALS, KKmax);
 
@@ -165,13 +171,19 @@ for trial = 1:N_TRIALS
 
     % --- Extract training samples from this trial ---
     [Xt, yt] = extractGPRSamples(CarLog, LightLog, stop_line);
-    X_train = [X_train; Xt];
-    y_train = [y_train; yt];
-    fprintf('  Trial %d: +%d samples (total so far: %d)\n', trial, size(Xt,1), size(X_train,1));
+    X_all = [X_all; Xt];
+    y_all = [y_all; yt];
+    trial_all = [trial_all; trial*ones(size(yt))];
+    fprintf('  Trial %d: +%d samples (total so far: %d)\n', trial, size(Xt,1), size(X_all,1));
 
 end % trial loop
 
-fprintf('\nTotal training samples: %d from %d trials\n', size(X_train,1), N_TRIALS);
+% ---- split by seed: whole trials are held out, so test traffic is unseen ----
+is_test = trial_all > N_TRIALS - N_TEST;
+X_train = X_all(~is_test,:);  y_train = y_all(~is_test);
+X_test  = X_all(is_test,:);   y_test  = y_all(is_test);
+fprintf('\nSamples: %d training (seeds 1-%d), %d test (seeds %d-%d)\n', ...
+    size(X_train,1), N_TRIALS-N_TEST, size(X_test,1), N_TRIALS-N_TEST+1, N_TRIALS);
 
 %% ===== TRAIN GPR =====
 MIN_SAMPLES = 100;
@@ -209,19 +221,32 @@ if size(X_train,1) >= MIN_SAMPLES
 
     simplot_dir = fullfile(fileparts(mfilename('fullpath')), '..', 'simplot');
     gpr_path    = fullfile(simplot_dir, 'gpr_arrival_model.mat');
-    save(gpr_path, 'gpr_model', 'X_train', 'y_train');
+    save(gpr_path, 'gpr_model', 'X_train', 'y_train', 'X_test', 'y_test');
     fprintf('GPR model saved -> %s\n', gpr_path);
 
     % Quick holdout evaluation
-    n_ho    = min(500, size(X_train,1));
-    idx_ho  = randperm(size(X_train,1), n_ho);
-    X_ho    = X_train(idx_ho,:);
-    y_true  = y_train(idx_ho);
+    % Test on the held-out seeds (never seen during fitting)
+    n_ho    = size(X_test,1);
+    X_ho    = X_test;
+    y_true  = y_test;
     [y_pred, y_sd] = predict(gpr_model, X_ho);
     residuals = y_pred - y_true;
     rmse = sqrt(mean(residuals.^2));
     mae  = mean(abs(residuals));
-    fprintf('Holdout (n=%d):  RMSE=%.2f s   MAE=%.2f s\n', n_ho, rmse, mae);
+    fprintf('Held-out seeds (n=%d):  RMSE=%.2f s   MAE=%.2f s\n', n_ho, rmse, mae);
+    % training-set fit, for comparison (over-fitting check)
+    [y_fit, ~] = predict(gpr_model, X_train);
+    rmse_tr = sqrt(mean((y_fit - y_train).^2));  mae_tr = mean(abs(y_fit - y_train));
+    fid = fopen(fullfile(PROJECT_ROOT, 'output', 'gpr_holdout_metrics.csv'), 'w');
+    fprintf(fid, 'set,n,rmse_s,mae_s,bias_s,within2s_pct,within5s_pct\n');
+    fprintf(fid, 'train,%d,%.3f,%.3f,%.3f,%.1f,%.1f\n', numel(y_train), rmse_tr, mae_tr, ...
+        mean(y_fit - y_train), 100*mean(abs(y_fit - y_train) < 2), 100*mean(abs(y_fit - y_train) < 5));
+    fprintf(fid, 'test,%d,%.3f,%.3f,%.3f,%.1f,%.1f\n', n_ho, rmse, mae, ...
+        mean(residuals), 100*mean(abs(residuals) < 2), 100*mean(abs(residuals) < 5));
+    fclose(fid);
+    kp_final = gpr_model.KernelInformation.KernelParameters;
+    fprintf('Final kernel parameters (length scale, signal std): %s;  noise sigma: %.4f\n', ...
+        mat2str(kp_final', 4), gpr_model.Sigma);
 
     %% --- Diagnostic plots ---
     out_dir = fullfile(PROJECT_ROOT, 'output');

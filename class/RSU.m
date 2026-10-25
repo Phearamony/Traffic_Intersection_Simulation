@@ -26,6 +26,9 @@ classdef RSU<handle
         % Paper parameters
         tau_safe = 4.0;
         h_time = 2.0;
+        tau_clear = 2.0;      % [s] release guard: no opposing through vehicle predicted within this time
+        t_now = 0;            % [s] current simulation time, set by the public entry points
+        delay_min_advisory = 0.5;   % [s] send a yield advisory only if delayed by at least this
         omega_East = 1.0;
         omega_West = 1.0;
         omega_NS = 1.0;
@@ -669,7 +672,7 @@ classdef RSU<handle
             end
             obj.opt_results.EW = struct('opt_p',opt_p,'tau_E',coordinated_tau_E,'tau_W',coordinated_tau_W,...
                 'tau_bar_E',tau_bar_E,'tau_bar_W',tau_bar_W,'ids_E',ids_E,'ids_W',ids_W,...
-                'turningCarID',turningCarID,'wTurnerID',turningCarID,'eTurnerID',existing_eTurnerID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'wTurnerID',turningCarID,'eTurnerID',existing_eTurnerID,'min_cost',min_cost,'t_opt',obj.t_now);
             fprintf('=== OPTIMAL: p=%d, cost=%.2f ===\n', opt_p, min_cost);
         end
 
@@ -727,7 +730,7 @@ classdef RSU<handle
             end
             obj.opt_results.NS = struct('opt_p',opt_p,'tau_S',coordinated_tau_S,'tau_N',coordinated_tau_N,...
                 'tau_bar_S',tau_bar_S,'tau_bar_N',tau_bar_N,'ids_S',ids_S,'ids_N',ids_N,...
-                'turningCarID',turningCarID,'nTurnerID',turningCarID,'sTurnerID',existing_sTurnerID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'nTurnerID',turningCarID,'sTurnerID',existing_sTurnerID,'min_cost',min_cost,'t_opt',obj.t_now);
         end
 
         function [tau_S, tau_N, feasible] = ComputeCoordinatedTimes_NS(obj, tau_bar_S, tau_bar_N, p, q, straight_S_mask)
@@ -782,7 +785,7 @@ classdef RSU<handle
             % W-turner result in EW. Both can coexist for mutual-turn phases.
             obj.opt_results.EW_rev = struct('opt_p',opt_p,'tau_E',coordinated_tau_E,'tau_W',coordinated_tau_W,...
                 'tau_bar_E',tau_bar_E,'tau_bar_W',tau_bar_W,'ids_E',ids_E,'ids_W',ids_W,...
-                'turningCarID',turningCarID,'eTurnerID',turningCarID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'eTurnerID',turningCarID,'min_cost',min_cost,'t_opt',obj.t_now);
             fprintf('=== OPTIMAL (EW_rev): p*=%d, cost=%.2f ===\n', opt_p, min_cost);
         end
 
@@ -824,11 +827,84 @@ classdef RSU<handle
             % Store S-turner result in NS_rev (same reason as EW_rev).
             obj.opt_results.NS_rev = struct('opt_p',opt_p,'tau_N',coordinated_tau_N,'tau_S',coordinated_tau_S,...
                 'tau_bar_N',tau_bar_N,'tau_bar_S',tau_bar_S,'ids_N',ids_N,'ids_S',ids_S,...
-                'turningCarID',turningCarID,'sTurnerID',turningCarID,'min_cost',min_cost);
+                'turningCarID',turningCarID,'sTurnerID',turningCarID,'min_cost',min_cost,'t_opt',obj.t_now);
             fprintf('=== OPTIMAL (NS_rev): p*=%d, cost=%.2f ===\n', opt_p, min_cost);
         end
 
         %% VELOCITY RECOMMENDATION
+        %% Yield advisory for a vehicle delayed by a turner's slot
+        % Returns the recommended speed d / (remaining coordinated time) for
+        % a vehicle that is still before its stop line and whose coordinated
+        % time is later than its undisturbed time by at least
+        % delay_min_advisory; NaN otherwise.
+        function V_rec = YieldAdvisory(obj, vehicleID, t)
+            obj.t_now = t;
+            V_rec = NaN;
+            d = obj.GetVehicleData(vehicleID);
+            if isempty(d) || ~obj.IsBeforeStopLine(d), return; end
+            [tau, tau_bar] = obj.GetCoordinatedDelay(vehicleID, d.Dir);
+            if isnan(tau) || isnan(tau_bar), return; end
+            if (tau - tau_bar) < obj.delay_min_advisory, return; end
+            if tau <= 0, return; end
+            V_rec = obj.CalculateRecommendedVelocity(vehicleID, tau, 0);
+        end
+
+        %% Remaining coordinated time and remaining undisturbed time
+        % Both aged by the time since the optimisation ran. If several
+        % results contain the vehicle, the latest coordinated time is used.
+        function [tau, tau_bar] = GetCoordinatedDelay(obj, vehicleID, dir)
+            tau = NaN; tau_bar = NaN;
+            names = {'EW', 'EW_rev', 'NS', 'NS_rev'};
+            for k = 1:numel(names)
+                if ~isfield(obj.opt_results, names{k}), continue; end
+                res = obj.opt_results.(names{k});
+                if isempty(res), continue; end
+                fId = ['ids_' dir]; fT = ['tau_' dir]; fB = ['tau_bar_' dir];
+                if ~isfield(res, fId) || ~isfield(res, fT) || ~isfield(res, fB), continue; end
+                idx = find(res.(fId) == vehicleID, 1);
+                if isempty(idx) || idx > numel(res.(fT)) || idx > numel(res.(fB)), continue; end
+                age = 0;
+                if isfield(res, 't_opt'), age = obj.t_now - res.t_opt; end
+                c = res.(fT)(idx) - age;
+                b = res.(fB)(idx) - age;
+                if isnan(tau) || c > tau
+                    tau = c; tau_bar = b;
+                end
+            end
+        end
+
+        %% Release guard for a right-turner whose slot is due
+        % False if an opposing through vehicle is inside the junction
+        % (past its stop line, before the centre) or is predicted to reach
+        % its stop line within tau_clear seconds.
+        function ok = OpposingClear(obj, oppDir, trafficLight)
+            ok = true;
+            if isempty(oppDir), return; end
+            ids = obj.GetActiveVehicles(oppDir);
+            for i = 1:length(ids)
+                od = obj.GetVehicleData(ids(i));
+                if isempty(od) || od.TurnRight || (isfield(od,'TurnLeft') && od.TurnLeft), continue; end
+                switch oppDir
+                    case 'E', dist = -obj.stop_line - od.X;
+                    case 'W', dist =  od.X - obj.stop_line;
+                    case 'N', dist = -obj.stop_line - od.Y;
+                    case 'S', dist =  od.Y - obj.stop_line;
+                    otherwise, continue;
+                end
+                if dist <= 0 && dist > -obj.stop_line
+                    ok = false; return;    % inside the junction, before the centre
+                end
+            end
+            [opp_ids, opp_taus] = obj.EstimateArrivalTimes(oppDir, trafficLight);
+            for k = 1:length(opp_ids)
+                od = obj.GetVehicleData(opp_ids(k));
+                if isempty(od) || od.TurnRight || (isfield(od,'TurnLeft') && od.TurnLeft), continue; end
+                if isfinite(opp_taus(k)) && opp_taus(k) < obj.tau_clear
+                    ok = false; return;
+                end
+            end
+        end
+
         function V_rec = CalculateRecommendedVelocity(obj, vehicleID, target_tau, current_t)
             tempData = obj.GetVehicleData(vehicleID);
             if isempty(tempData), V_rec = NaN; return; end
@@ -841,7 +917,9 @@ classdef RSU<handle
                 case 'W', dist=abs(obj.stop_line-data.X);
                 otherwise, V_rec=NaN; return;
             end
-            time_available = target_tau - current_t;
+            % target_tau is the REMAINING time to the coordinated crossing
+            % (already aged by GetCoordinatedArrivalTime / GetCoordinatedDelay).
+            time_available = target_tau;   % current_t is unused, kept for compatibility
             if time_available<=0, V_rec=data.V; return; end
             V_rec = dist/time_available;
             V_rec = max(min(V_rec, obj.Vd*1.2), 0);
@@ -860,6 +938,7 @@ classdef RSU<handle
             %   (c) Both sides have right-turners  → mutual turn, no gap-slot opt needed
 
             didRun = false;
+            obj.t_now = t;
             REOPT_RADIUS = 50;  % [m] re-optimize when vehicle set within this radius changes
 
             if strcmp(greenDir, 'EW')
@@ -1009,7 +1088,11 @@ classdef RSU<handle
                 if isfield(res, idsField) && isfield(res, tauField)
                     idx = find(res.(idsField) == vehicleID);
                     if ~isempty(idx)
-                        val = res.(tauField)(idx);
+                        % Stored times are relative to the moment the
+                        % optimisation ran; subtract the time elapsed since.
+                        age = 0;
+                        if isfield(res, 't_opt'), age = obj.t_now - res.t_opt; end
+                        val = res.(tauField)(idx(1)) - age;
                         if isnan(tau) || val > tau
                             tau = val;
                         end
@@ -1063,6 +1146,7 @@ classdef RSU<handle
 
             global TrafficLight
 
+            obj.t_now = t;
             tempData = obj.GetVehicleData(vehicleID);
             if isempty(tempData) || ~tempData.TurnRight
                 vpos = []; turn_signal = 0; return;
@@ -1193,7 +1277,7 @@ classdef RSU<handle
                     V_rec = obj.CalculateRecommendedVelocity(vehicleID, tau, t);
                     vpos = struct('vehicle_id',vehicleID,'direction',dir,...
                                   'coordinated_tau',tau,'recommended_V',V_rec);
-                    if tau <= 0.5
+                    if tau <= 0.5 && obj.OpposingClear(oppDir, TrafficLight)
                         turn_signal = 1; vpos.action = 'proceed';
                     else
                         turn_signal = -1; vpos.action = 'wait';
@@ -1311,7 +1395,7 @@ classdef RSU<handle
             else
                 V_rec = obj.CalculateRecommendedVelocity(vehicleID, tau, t);
                 vpos.recommended_V = V_rec;
-                if tau <= 0.5
+                if tau <= 0.5 && obj.OpposingClear(oppDir, TrafficLight)
                     turn_signal = 1;  vpos.action = 'proceed';
                 else
                     turn_signal = -1; vpos.action = 'wait';

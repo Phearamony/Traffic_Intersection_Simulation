@@ -14,13 +14,18 @@
 %   1. main_human_driving.m          → traffic_schedule.mat
 %   2. main_human_driving_gpr_train.m → gpr_arrival_model.mat
 
-clear classes %#ok<CLCLS>
-close all; clear; clc;
+% ---- run settings (see function/abl_settings.m) ----
+if ~strcmp(getenv('ABL_BATCH'), '1')
+    clear classes %#ok<CLCLS>
+    close all; clear; clc;
+end
 clear global RSUObjs
-
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/class'))
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/function'))
-addpath(genpath('C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/simplot'))
+ROOT_ = fileparts(fileparts(mfilename('fullpath')));
+addpath(genpath(fullfile(ROOT_, 'class')))
+addpath(genpath(fullfile(ROOT_, 'function')))
+addpath(genpath(fullfile(ROOT_, 'simplot')))
+S_ = abl_settings();
+rng(S_.seed);
 
 global CarN CarS CarE CarW TrafficLight
 global dt KK
@@ -245,6 +250,7 @@ all_Y     = [CarLog.Y];
 tau_N_pred   = [];  tau_N_act   = [];
 tau_IDM_pred = [];  tau_IDM_act = [];
 tau_GPR_pred = [];  tau_GPR_act = [];
+com_pred     = zeros(0,3);  com_act = zeros(0,1);   % records finite for all three estimators
 n_no_crossing = 0;
 
 for k = 1:length(CompLog)
@@ -275,6 +281,12 @@ for k = 1:length(CompLog)
     if isnan(t_cross), n_no_crossing=n_no_crossing+1; continue; end
     tau_actual = t_cross - green_t;
     if tau_actual <= 0 || tau_actual > 120, n_no_crossing=n_no_crossing+1; continue; end
+
+    % Common set: records where all three estimators returned a finite value
+    if isfinite(CompLog(k).tau_Naive) && isfinite(CompLog(k).tau_IDM) && isfinite(CompLog(k).tau_GPR)
+        com_pred(end+1,:) = [CompLog(k).tau_Naive, CompLog(k).tau_IDM, CompLog(k).tau_GPR]; %#ok<SAGROW>
+        com_act(end+1,1)  = tau_actual; %#ok<SAGROW>
+    end
 
     % Add to each estimator independently — only skip if that estimator is Inf
     if isfinite(CompLog(k).tau_Naive)
@@ -340,11 +352,34 @@ end
 fprintf('%s\n\n', SEP);
 
 %% ── Save ────────────────────────────────────────────────────────────────────
-out_dir = 'C:/Users/monea/OneDrive/Documents/MATLAB/Traffic_Intersection/output';
+out_dir = fullfile(ROOT_, 'output');
 save(fullfile(out_dir,'estimator_comparison_results.mat'), ...
      'tau_N_pred','tau_N_act','tau_IDM_pred','tau_IDM_act', ...
      'tau_GPR_pred','tau_GPR_act', ...
-     'rmse','mae','bias','w2','w5','ns','infs','n_total','n_no_crossing');
+     'rmse','mae','bias','w2','w5','ns','infs','n_total','n_no_crossing', ...
+     'com_pred','com_act');
+
+% ---- one row per (seed, estimator, sample set) for the journal tables ----
+est_csv = fullfile(out_dir, 'estimator_runs.csv');
+new_file = ~exist(est_csv, 'file');
+fid = fopen(est_csv, 'a');
+if new_file
+    fprintf(fid, 'seed,kkmax,estimator,set,n,rmse_s,mae_s,bias_s,within2_pct,within5_pct,fail_pct\n');
+end
+est_names = {'naive', 'idm', 'gpr'};
+for j = 1:3
+    fprintf(fid, '%g,%d,%s,own,%d,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f\n', S_.seed, KKmax, est_names{j}, ...
+        ns(j), rmse(j), mae(j), bias(j), w2(j), w5(j), infs(j));
+end
+if ~isempty(com_act)
+    for j = 1:3
+        r = com_pred(:,j) - com_act;
+        fprintf(fid, '%g,%d,%s,common,%d,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f\n', S_.seed, KKmax, est_names{j}, ...
+            numel(r), sqrt(mean(r.^2)), mean(abs(r)), mean(r), 100*mean(abs(r)<=2), 100*mean(abs(r)<=5), infs(j));
+    end
+end
+fclose(fid);
+if ~S_.plot, return; end   % batch mode: no figures
 
 %% ═══════════════════════════════════════════════════════════════════════════
 %% FIGURE 1 — Predicted vs Actual scatter (1 × 3 panels)

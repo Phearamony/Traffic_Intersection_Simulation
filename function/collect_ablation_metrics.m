@@ -1,66 +1,83 @@
-function collect_ablation_metrics(FuelLog, label)
-%COLLECT_ABLATION_METRICS  Append one summary row per configuration to a CSV.
+function collect_ablation_metrics(FuelLog, label, seed, CarLog)
+%COLLECT_ABLATION_METRICS  Append one row per (configuration, seed) to a CSV.
 %
-%   Usage: add ONE line at the very end of each main_*.m script,
-%   after FuelLog is fully assembled (i.e., after the end-of-sim harvest):
+%   collect_ablation_metrics(FuelLog, label)
+%   collect_ablation_metrics(FuelLog, label, seed, CarLog)
 %
-%       collect_ablation_metrics(FuelLog, 'C6_mpc_rsu_gpr');
+%   Call once at the end of each main_*.m script, after FuelLog is complete.
 %
-%   Suggested labels (matching the six-configuration ablation):
-%       'C1_human'         main_human_driving.m
-%       'C2_v2v_idm'       main_v2v_idm.m
-%       'C3_v2v_mpc'       main_v2v_mpc.m
-%       'C4_idm_rsu'       main_v2v_idm_rsu.m      (IDM ctrl + IDM fwd-sim RSU)
-%       'C5_idm_rsu_gpr'   main_v2v_idm_rsu_gpr.m  (IDM ctrl + GPR RSU)  -> isolates GPR
-%       'C5b_mpc_rsu'      main_v2v_mpc_rsu.m      (MPC ctrl + IDM fwd-sim RSU) -> isolates MPC
-%       'C6_mpc_rsu_gpr'   main_v2v_mpc_rsu_gpr.m  (proposed)
+%   Labels used in the journal ablation:
+%       'C1_human'         main_human_driving_plot.m   (IDM + noise, local gap acceptance)
+%       'V2V_IDM'          main_v2v_idm.m
+%       'V2V_MPC'          main_v2v_mpc.m
+%       'C2_idm_rsu'       main_v2v_idm_rsu.m          (IDM ctrl + IDM fwd-sim RSU)
+%       'C2G_idm_rsu_gpr'  main_v2v_idm_rsu_gpr.m      (IDM ctrl + GPR RSU)
+%       'C3I_mpc_rsu'      main_v2v_mpc_rsu.m          (MPC ctrl + IDM fwd-sim RSU)
+%       'C3_mpc_rsu_gpr'   main_v2v_mpc_rsu_gpr.m      (proposed)
 %
-%   Output: output/ablation_summary.csv  (one row per run; re-running a
-%   config appends a new row — keep the last row per label, or delete the
-%   CSV to start fresh).
+%   Output: output/ablation_runs.csv, one row per run. summarize_ablation.m
+%   turns it into means, 95% confidence intervals and paired tests.
 %
-%   Metrics reported (addresses Reviewer 1, points 3 & 6):
-%     n_rt_intent    : right-turn vehicles injected that appear in FuelLog
-%     n_rt_completed : right-turn vehicles that actually completed the turn
-%                      within the simulation horizon (TurnedRight flag)
-%     rt_completion  : n_rt_completed / n_rt_intent  (throughput metric)
-%     fuel_rt_mL     : mean fuel per COMPLETED right-turning vehicle
-%     fuel_str_mL    : mean fuel per straight-going vehicle
-%     gap_rt_s       : mean gap-waiting idle time of completed RT vehicles
-%     red_rt_s       : mean red-phase idle time of completed RT vehicles
+%   Vehicle sets
+%     Only vehicles that LEFT the model before the end of the run are used
+%     for fuel and idle-time averages (field Exited = true), so every
+%     average is over complete trips. Vehicles still inside at the end are
+%     counted in n_unfinished.
+%     rt  : right-turners that completed the turn and exited
+%     str : straight vehicles (no left or right turn) that exited
+%
+%   Columns
+%     seed, label
+%     n_rt_intent, n_rt_done, rt_completion   right-turners entered / completed
+%     n_exited, n_unfinished                  throughput and vehicles left inside
+%     fuel_rt_mL, fuel_str_mL                 mean fuel per completed trip [mL]
+%     gap_rt_s, red_rt_s                      mean idle time of completed right-turners [s]
+%     red_str_s                               mean red idle time of straight vehicles [s]
+%     sep_min_s, sep_mean_s, n_sep_below2     right-turn separation (compute_turn_safety)
+
+if nargin < 3 || isempty(seed), seed = NaN; end
+if nargin < 4, CarLog = []; end
 
 if isempty(FuelLog)
-    warning('collect_ablation_metrics: FuelLog empty for %s — skipped.', label);
+    warning('collect_ablation_metrics: FuelLog empty for %s, skipped.', label);
     return;
 end
 
-is_rt_intent = logical([FuelLog.TurnRight]);
-is_rt_done   = logical([FuelLog.TurnedRight]);   % completed the turn in-horizon
-is_str       = ~is_rt_intent;
+hasExit = isfield(FuelLog, 'Exited');
+hasLeft = isfield(FuelLog, 'TurnLeft');
 
-smean = @(x) mean(x(~isnan(x) & isfinite(x)));
+rt_intent = logical([FuelLog.TurnRight]);
+rt_done   = logical([FuelLog.TurnedRight]);
+if hasExit, exited = logical([FuelLog.Exited]); else, exited = true(size(rt_intent)); end
+if hasLeft, left = logical([FuelLog.TurnLeft]); else, left = false(size(rt_intent)); end
 
-% Fuel / idle are reported over COMPLETED right-turners only, so that the
-% per-vehicle averages are well-defined; completion ratio captures the rest.
-fuel_rt  = smean([FuelLog(is_rt_done).fuel_total]);
-gap_rt   = smean([FuelLog(is_rt_done).idle_gap_time]);
-red_rt   = smean([FuelLog(is_rt_done).idle_red_time]);
-fuel_str = smean([FuelLog(is_str).fuel_total]);
+is_rt  = rt_done & exited;
+is_str = ~rt_intent & ~left & exited;
 
-n_rt_intent = sum(is_rt_intent);
-n_rt_done   = sum(is_rt_done);
-completion  = n_rt_done / max(n_rt_intent, 1);
+smean = @(x) mean(x(isfinite(x)));
 
-% Resolve the repo's output/ folder relative to THIS file's location
-% (function/collect_ablation_metrics.m -> ../output), not the current
-% working directory. This avoids failures when a main_*.m script is run
-% from a different current folder than the repo root.
-this_dir  = fileparts(mfilename('fullpath'));
-output_dir = fullfile(this_dir, '..', 'output');
-if ~exist(output_dir, 'dir')
-    mkdir(output_dir);
+fuel_rt   = smean([FuelLog(is_rt).fuel_total]);
+gap_rt    = smean([FuelLog(is_rt).idle_gap_time]);
+red_rt    = smean([FuelLog(is_rt).idle_red_time]);
+fuel_str  = smean([FuelLog(is_str).fuel_total]);
+red_str   = smean([FuelLog(is_str).idle_red_time]);
+
+n_rt_intent  = sum(rt_intent);
+n_rt_done    = sum(rt_done);
+completion   = n_rt_done / max(n_rt_intent, 1);
+n_exited     = sum(exited);
+n_unfinished = sum(~exited);
+
+if ~isempty(CarLog)
+    Rs = compute_turn_safety(CarLog);
+else
+    Rs = struct('sep_min', NaN, 'sep_mean', NaN, 'n_below2', NaN);
 end
-csv_path = fullfile(output_dir, 'ablation_summary.csv');
+
+this_dir   = fileparts(mfilename('fullpath'));
+output_dir = fullfile(this_dir, '..', 'output');
+if ~exist(output_dir, 'dir'), mkdir(output_dir); end
+csv_path = fullfile(output_dir, 'ablation_runs.csv');
 write_header = ~exist(csv_path, 'file');
 
 fid = fopen(csv_path, 'a');
@@ -68,15 +85,16 @@ if fid == -1
     error('collect_ablation_metrics: cannot open %s', csv_path);
 end
 if write_header
-    fprintf(fid, ['label,n_rt_intent,n_rt_completed,rt_completion,', ...
-                  'fuel_rt_mL,fuel_str_mL,gap_rt_s,red_rt_s\n']);
+    fprintf(fid, ['seed,label,n_rt_intent,n_rt_done,rt_completion,n_exited,n_unfinished,', ...
+                  'fuel_rt_mL,fuel_str_mL,gap_rt_s,red_rt_s,red_str_s,', ...
+                  'sep_min_s,sep_mean_s,n_sep_below2\n']);
 end
-fprintf(fid, '%s,%d,%d,%.3f,%.2f,%.2f,%.2f,%.2f\n', ...
-    label, n_rt_intent, n_rt_done, completion, ...
-    fuel_rt, fuel_str, gap_rt, red_rt);
+fprintf(fid, '%g,%s,%d,%d,%.4f,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%g\n', ...
+    seed, label, n_rt_intent, n_rt_done, completion, n_exited, n_unfinished, ...
+    fuel_rt, fuel_str, gap_rt, red_rt, red_str, Rs.sep_min, Rs.sep_mean, Rs.n_below2);
 fclose(fid);
 
-fprintf(['[collect_ablation_metrics] %s: RT completed %d/%d (%.0f%%), ', ...
-         'fuel RT %.1f mL, fuel Str %.1f mL, gap %.1f s\n'], ...
-    label, n_rt_done, n_rt_intent, 100*completion, fuel_rt, fuel_str, gap_rt);
+fprintf(['[metrics] seed %g %s: RT %d/%d, fuel RT %.1f mL, Str %.1f mL, ', ...
+         'gap %.1f s, min sep %.1f s\n'], ...
+    seed, label, n_rt_done, n_rt_intent, fuel_rt, fuel_str, gap_rt, Rs.sep_min);
 end

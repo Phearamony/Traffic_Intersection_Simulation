@@ -39,6 +39,12 @@ classdef Car<handle
         fuel_total    = 0;   % cumulative fuel consumed [ml]
         idle_gap_time = 0;   % time spent stopped waiting for a right-turn gap [s]
         idle_red_time = 0;   % time spent stopped at a red/yellow light [s]
+
+        % ---- RSU speed advisory ----
+        % Vd_cap: recommended speed from the RSU (NaN = no advisory).
+        % The controller uses EffVd() instead of Vd, see EffVd below.
+        Vd_cap   = NaN;
+        Vcap_min = 2.0;   % [m/s] floor, so an advisory never parks a car far upstream
     end
 
     methods
@@ -92,7 +98,7 @@ classdef Car<handle
             a = 1.5; b = 2.5;
             Ss = S0 + H.V * H.Th + H.V * dV / (2 * sqrt(a * b));
 
-            f = a * (1 - (H.V / H.Vd)^4 - (Ss / S)^2);
+            f = a * (1 - (H.V / H.EffVd())^4 - (Ss / S)^2);
             f = 8 * tanh(f / 8.0) * (1.0 + randn / 30.0);
             Acel = f;
         end
@@ -316,7 +322,7 @@ classdef Car<handle
                     sLead(1)-S0-gapBoost(1), sLead(2)-S0-gapBoost(2), sLead(3)-S0-gapBoost(3));
             end
 
-            Vd_vec = H.Vd*ones(T,1);
+            Vd_vec = H.EffVd()*ones(T,1);
 
             % --- QP: min 0.5 U'HU + f'U ---
             f_qp = Q_u * (Av - Vd_vec);
@@ -386,7 +392,7 @@ classdef Car<handle
                 if current_gap < stopping_dist * 1.5 + S0 + 20
                     u_fallback = Umn;  % Maximum braking
                 else
-                    u_fallback = max(min(0.3*(H.Vd - v0), Umx), Umn);
+                    u_fallback = max(min(0.3*(H.EffVd() - v0), Umx), Umn);
                 end
 
                 % Fill entire horizon with fallback value
@@ -488,7 +494,31 @@ classdef Car<handle
     end
 
     methods
-        
+
+        %% ==================== RSU SPEED ADVISORY ====================
+        %% Desired speed actually used by the controller
+        % Without an advisory this is Vd. With an advisory v_rec it is
+        % min(Vd, max(v_rec, 0.8*V, Vcap_min)): the vehicle slows toward the
+        % recommended speed, but the target never drops below 80 % of the
+        % current speed in one step, so neither controller is asked for an
+        % abrupt stop by the advisory alone (stopping is done by the gap
+        % constraint / virtual leaders, as before).
+        function v = EffVd(obj)
+            v = obj.Vd;
+            if ~isempty(obj.Vd_cap) && isfinite(obj.Vd_cap)
+                v = min(obj.Vd, max([obj.Vd_cap, 0.8*obj.V, obj.Vcap_min]));
+            end
+        end
+
+        %% Store (or clear) the RSU recommended speed after each X2V message
+        function SetSpeedCap(obj, v_rec, enabled)
+            if enabled && ~isempty(v_rec) && isfinite(v_rec) && v_rec >= 0
+                obj.Vd_cap = v_rec;
+            else
+                obj.Vd_cap = NaN;
+            end
+        end
+
         %% ==================== V2X COMMUNICATION ====================
         
         %% Send V2X data to RSU
