@@ -44,7 +44,7 @@ stop_line     = 10;
 spawn_gap_min = 8;
 
 % ── Load traffic schedule ─────────────────────────────────────────────────
-sched_path = fullfile(fileparts(mfilename('fullpath')), '..', 'simplot', 'traffic_schedule.mat');
+sched_path = S_.schedpath;   % default simplot/traffic_schedule.mat (ABL_SCHED_PATH)
 if ~exist(sched_path, 'file')
     error('traffic_schedule.mat not found. Run main_human_driving.m first.');
 end

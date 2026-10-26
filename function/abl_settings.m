@@ -13,6 +13,7 @@ function S = abl_settings()
 %   ABL_KKMAX       number of 0.5 s steps per run                       (default 720 = 360 s)
 %   ABL_PLOT        1 = save the final figures (trajectories, fuel)     (default 1)
 %   ABL_LIVE        1 = live intersection animation while running       (default 1)
+%                   (independent of ABL_PLOT; watch_main uses LIVE=1, PLOT=0)
 %   ABL_NOLOG       1 = do not append rows to the results CSVs          (default 0)
 %   ABL_BATCH       1 = called from a runner (skip clear/close)         (default 0)
 %   ABL_SCHED_ONLY  1 = main_human_driving only writes the schedule     (default 0)
@@ -21,6 +22,8 @@ function S = abl_settings()
 %   ABL_EST_CSV     estimator CSV        (default output/estimator_runs.csv)
 %   ABL_STUDY, ABL_POINT   labels written into every results row        (default '')
 %   ABL_SAVELOG     1 = also save CarLog of each run to ABL_OUTDIR      (default 0)
+%   ABL_SCHED_PATH  traffic schedule file written by main_human_driving and
+%                   read by every other main    (default simplot/traffic_schedule.mat)
 %
 %   --- traffic (read by make_traffic_schedule) ---
 %   ABL_SCHED       'staged' (light/medium/heavy, default), 'const',
@@ -55,6 +58,7 @@ S.estcsv   = readStr('ABL_EST_CSV', fullfile(root, 'output', 'estimator_runs.csv
 S.study    = readStr('ABL_STUDY', '');
 S.point    = readStr('ABL_POINT', '');
 S.savelog  = logical(readNum('ABL_SAVELOG', 0));
+S.schedpath= readStr('ABL_SCHED_PATH', fullfile(root, 'simplot', 'traffic_schedule.mat'));
 
 S.sched    = lower(readStr('ABL_SCHED', 'staged'));
 S.demand   = readNum('ABL_DEMAND', 0.40);

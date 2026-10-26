@@ -94,7 +94,7 @@ lambdaEW_axis = [0.25, 0.40, 0.55];  % EW total
 % intentionally want a new schedule; use THIS file when you just want to
 % tweak plots or the manuscript figures.
 
-sched_path = fullfile(PROJECT_ROOT, 'simplot', 'traffic_schedule.mat');
+sched_path = S_.schedpath;   % default simplot/traffic_schedule.mat (ABL_SCHED_PATH)
 if ~isfile(sched_path)
     error('traffic_schedule.mat not found at:\n  %s\nRun main_human_driving.m first to generate it.', sched_path);
 end
@@ -183,7 +183,7 @@ for KK = 1:KKmax
 
     %% === Plot ===
     if(mod(KK,2)==1)
-        if S_.plot && S_.live, SimPlotIntersection; end
+        if S_.live, SimPlotIntersection; end
     end
 
     %% === Spawn new cars (from pre-generated schedule) ===

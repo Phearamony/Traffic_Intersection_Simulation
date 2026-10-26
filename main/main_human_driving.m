@@ -110,7 +110,7 @@ fprintf('Generating traffic schedule (KKmax=%d, dt=%.1fs, mode=%s)...\n', KKmax,
 sched = make_traffic_schedule(S_, KKmax, dt, DemandStages, lambdaNS_axis, lambdaEW_axis);
 
 % Save alongside the main files so all scenarios can load it
-sched_path = fullfile(PROJECT_ROOT, 'simplot', 'traffic_schedule.mat');
+sched_path = S_.schedpath;   % default simplot/traffic_schedule.mat (ABL_SCHED_PATH)
 save(sched_path, 'sched');
 fprintf('Traffic schedule saved → %s\n', sched_path);
 fprintf('  Total arrival intentions: N=%d  S=%d  E=%d  W=%d\n', ...
@@ -192,7 +192,7 @@ for KK = 1:KKmax
 
     %% === Plot ===
     if(mod(KK,2)==1)
-        if S_.plot && S_.live, SimPlotIntersection; end
+        if S_.live, SimPlotIntersection; end
     end
 
     %% === Spawn new cars (from pre-generated schedule) ===

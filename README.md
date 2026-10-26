@@ -80,6 +80,7 @@ archive/      old versions and unused files, kept for reference (see archive/REA
 | `main/run_ablation.m` | Runs every configuration over many seeds and summarizes the results |
 | `main/make_figures.m` | Makes every journal figure after `run_ablation` |
 | `main/run_scenarios.m` | Illustrative fixed scenarios for the paper |
+| `main/watch_main.m` | Watch any configuration as a live animation; writes nothing to `output/` or the results CSVs |
 | `main/run_sweeps.m` | Stress tests (demand, right-turn share, latency, loss, penetration, drivers, asymmetry) |
 | `main/main_v2v_idm.m` | V2V-only IDM baseline |
 | `main/main_v2v_idm_rsu.m` | C2: IDM + RSU (IDM estimator) |
@@ -103,6 +104,19 @@ demo_main          % quick visual demo of the proposed system
 ```
 
 Every `main_*.m` script now finds the repo folders from its own location, so no path edits are needed.
+
+### Watching a configuration (nothing saved)
+
+```matlab
+watch_main('C3')                       % proposed system, seed 101
+watch_main('C1', 105)                  % human driving, seed 105
+watch_main('C3', 1, 'ABL_SCHED', 'scenarioB')                       % illustrative scenario
+watch_main('C3', 201, 'ABL_SCHED', 'const', 'ABL_PEN', '0.5')       % 50% CAVs
+```
+
+`watch_main` makes the traffic for that seed in a temporary folder, plays the live intersection
+animation, and writes no results row, no figure and no `simplot/traffic_schedule.mat`.
+Pressing F5 on a `main_*.m` script still works as before, but that does save figures and a results row.
 
 ## Journal experiments (multi-seed ablation)
 
