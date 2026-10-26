@@ -180,7 +180,7 @@ for KK = 1:KKmax
 
     %% === Plot ===
     if(mod(KK,2)==1)
-        if S_.plot, SimPlotIntersection; end
+        if S_.plot && S_.live, SimPlotIntersection; end
     end
 
     %% === Spawn new cars (from pre-generated schedule) ===

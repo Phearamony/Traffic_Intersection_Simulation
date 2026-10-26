@@ -362,7 +362,8 @@ save(fullfile(out_dir,'estimator_comparison_results.mat'), ...
 % ---- one row per (seed, estimator, sample set) for the journal tables ----
 est_csv = fullfile(out_dir, 'estimator_runs.csv');
 new_file = ~exist(est_csv, 'file');
-fid = fopen(est_csv, 'a');
+if S_.nolog, fid = -1; else, fid = fopen(est_csv, 'a'); end
+if fid > 0
 if new_file
     fprintf(fid, 'seed,kkmax,estimator,set,n,rmse_s,mae_s,bias_s,within2_pct,within5_pct,fail_pct\n');
 end
@@ -379,6 +380,7 @@ if ~isempty(com_act)
     end
 end
 fclose(fid);
+end
 if ~S_.plot, return; end   % batch mode: no figures
 
 %% ═══════════════════════════════════════════════════════════════════════════
@@ -406,7 +408,7 @@ for j = 1:3
     axis equal; xlim(lims); ylim(lims); grid on; box off;
 end
 sgtitle('Predicted vs Actual Arrival Time', 'FontSize',13,'FontWeight','bold');
-exportgraphics(fig1, fullfile(out_dir,'estimator_comparison_scatter.png'), 'Resolution',150);
+exportgraphics(fig1, fullfile(out_dir,'estimator_comparison_scatter.png'), 'Resolution',300);
 fprintf('Scatter plot saved  -> output/estimator_comparison_scatter.png\n');
 close(fig1);
 
@@ -454,7 +456,7 @@ end
 
 sgtitle(sprintf('Residual Analysis  |  Naive n=%d  IDM n=%d  GPR n=%d', ns(1),ns(2),ns(3)), ...
         'FontSize',13,'FontWeight','bold');
-exportgraphics(fig2, fullfile(out_dir,'estimator_comparison_residuals.png'), 'Resolution',150);
+exportgraphics(fig2, fullfile(out_dir,'estimator_comparison_residuals.png'), 'Resolution',300);
 fprintf('Residual plot saved → output/estimator_comparison_residuals.png\n');
 fprintf('Raw data saved      → output/estimator_comparison_results.mat\n\n');
 close(fig2);

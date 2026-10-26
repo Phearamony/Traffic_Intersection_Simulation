@@ -41,11 +41,14 @@ if with_estimator
 end
 
 old = struct('b', getenv('ABL_BATCH'), 'p', getenv('ABL_PLOT'), ...
-             'k', getenv('ABL_KKMAX'), 's', getenv('ABL_SEED'));
+             'k', getenv('ABL_KKMAX'), 's', getenv('ABL_SEED'), ...
+             'l', getenv('ABL_LIVE'), 'n', getenv('ABL_NOLOG'));
 cleanupObj = onCleanup(@() restoreEnv(old)); %#ok<NASGU>
 
 setenv('ABL_BATCH', '1');
 setenv('ABL_PLOT', '0');
+setenv('ABL_LIVE', '0');
+setenv('ABL_NOLOG', '0');
 setenv('ABL_KKMAX', num2str(kkmax));
 
 log_path = fullfile(root, 'output', 'ablation_errors.log');
@@ -86,4 +89,6 @@ setenv('ABL_BATCH', old.b);
 setenv('ABL_PLOT',  old.p);
 setenv('ABL_KKMAX', old.k);
 setenv('ABL_SEED',  old.s);
+setenv('ABL_LIVE',  old.l);
+setenv('ABL_NOLOG', old.n);
 end

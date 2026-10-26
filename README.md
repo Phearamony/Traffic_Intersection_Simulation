@@ -71,6 +71,7 @@ output/     Generated figures, videos and ablation summary
 | `main/main_human_driving.m` | Generates the shared traffic schedule for the current seed (and runs C1) |
 | `main/main_human_driving_plot.m` | C1: uncoordinated human driving (IDM + noise), writes the C1 metrics |
 | `main/run_ablation.m` | Runs every configuration over many seeds and summarizes the results |
+| `main/make_figures.m` | Makes every journal figure after `run_ablation` |
 | `main/main_v2v_idm.m` | V2V-only IDM baseline |
 | `main/main_v2v_idm_rsu.m` | C2: IDM + RSU (IDM estimator) |
 | `main/main_v2v_idm_rsu_gpr.m` | C2G: IDM + RSU (GPR estimator) |
@@ -105,7 +106,13 @@ delete ../output/ablation_runs.csv            % 2. start a fresh study (if the f
 delete ../output/estimator_runs.csv
 run_ablation(101:120, 720, true)  % 3. 20 seeds x all configurations, 360 s each,
                                   %    plus the estimator comparison per seed
+make_figures                      % 4. every simulation figure, into output/figures/
 ```
+
+`make_figures` re-runs one representative seed (the one whose C3 right-turner fuel is closest to the
+median) with figures on and the live animation off, without adding rows to the results CSVs, then draws
+the multi-seed summary (`ablation_summary.png`, mean and 95% CI per configuration) and the paired
+differences (`ablation_paired.png`). `make_figures(107)` uses a seed of your choice.
 
 `run_ablation` writes:
 
@@ -116,9 +123,10 @@ run_ablation(101:120, 720, true)  % 3. 20 seeds x all configurations, 360 s each
 | `output/ablation_pairs.csv` | paired comparisons over seeds: mean difference, 95% CI, Wilcoxon and paired t-test p-values |
 | `output/estimator_runs.csv` | per seed and estimator: RMSE, MAE, bias, share within 2 s / 5 s, failure rate, on each estimator's own samples and on the common sample set |
 | `output/ablation_errors.log` | any run that failed, with the error |
+| `output/figures/` | all journal figures with paper numbering (from `make_figures`) |
 
 Settings come from `function/abl_settings.m` (environment variables `ABL_SEED`, `ABL_KKMAX`, `ABL_PLOT`,
-`ABL_VREC`). Running a single script by hand still works: it uses seed 1, 720 steps and live plots.
+`ABL_LIVE`, `ABL_NOLOG`, `ABL_VREC`). Running a single script by hand still works: it uses seed 1, 720 steps and live plots.
 **Run `main_human_driving.m` first** whenever you change the seed or the horizon, because it regenerates
 `simplot/traffic_schedule.mat`.
 

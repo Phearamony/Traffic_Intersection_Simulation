@@ -68,6 +68,11 @@ completion   = n_rt_done / max(n_rt_intent, 1);
 n_exited     = sum(exited);
 n_unfinished = sum(~exited);
 
+if strcmp(getenv('ABL_NOLOG'), '1')
+    fprintf('[metrics] %s: ABL_NOLOG=1, row not written\n', label);
+    return;
+end
+
 if ~isempty(CarLog)
     Rs = compute_turn_safety(CarLog);
 else
