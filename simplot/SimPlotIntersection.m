@@ -69,6 +69,7 @@ turnRColor = [0.5 0 0.5];
 allDirs = {'N', 'S', 'E', 'W'};
 allCars = {CarN, CarS, CarE, CarW};
 carW = 2; carL = 2;
+anyHuman_ = false;
 
 for d = 1:4
     cars = allCars{d};
@@ -87,13 +88,21 @@ for d = 1:4
             clr = defaultColor;
         end
 
+        % Mixed traffic (ABL_PEN < 1): human-driven cars (no V2X, invisible
+        % to the RSU) get a thick black outline; CAVs keep the thin one.
+        if isprop(car, 'IsCAV') && ~car.IsCAV
+            edgeW = 2.5; anyHuman_ = true;
+        else
+            edgeW = 0.5;
+        end
+
         % Draw at actual position based on direction
         if car.Dir == 'E' || car.Dir == 'W'
             rectangle('Position', [car.X - carL/2, car.Y - carW/2, carL, carW], ...
-                'FaceColor', clr, 'EdgeColor', 'k');
+                'FaceColor', clr, 'EdgeColor', 'k', 'LineWidth', edgeW);
         else
             rectangle('Position', [car.X - carW/2, car.Y - carL/2, carW, carL], ...
-                'FaceColor', clr, 'EdgeColor', 'k');
+                'FaceColor', clr, 'EdgeColor', 'k', 'LineWidth', edgeW);
         end
     end
 end
@@ -107,7 +116,13 @@ hW = plot(nan, nan, 's', 'MarkerFaceColor', dirColorMap.W, 'MarkerEdgeColor', 'k
 hL = plot(nan, nan, 's', 'MarkerFaceColor', turnLColor, 'MarkerEdgeColor', 'k', 'MarkerSize', 10, 'DisplayName', 'Left turn');
 hR = plot(nan, nan, 's', 'MarkerFaceColor', turnRColor, 'MarkerEdgeColor', 'k', 'MarkerSize', 10, 'DisplayName', 'Right turn');
 
-leg = legend([hN, hS, hE, hW, hL, hR], 'Location', 'northeastoutside');
+hList_ = [hN, hS, hE, hW, hL, hR];
+if anyHuman_
+    hH = plot(nan, nan, 's', 'MarkerFaceColor', 'w', 'MarkerEdgeColor', 'k', 'LineWidth', 2.5, ...
+              'MarkerSize', 10, 'DisplayName', 'Human (no V2X)');
+    hList_(end+1) = hH;
+end
+leg = legend(hList_, 'Location', 'northeastoutside');
 set(leg, 'AutoUpdate', 'off');
 
 grid on;
