@@ -20,6 +20,8 @@ REPO_ROOT = fileparts(fileparts(mfilename('fullpath')));
 addpath(genpath(fullfile(REPO_ROOT, 'class')))
 addpath(genpath(fullfile(REPO_ROOT, 'function')))
 addpath(genpath(fullfile(REPO_ROOT, 'simplot')))
+v2x_channel('reset');      % ideal channel (no latency, no loss) unless ABL_LAT / ABL_LOSS are set
+mpc_fail_counter('reset');
 
 global CarN CarS CarE CarW TrafficLight
 global dt KK

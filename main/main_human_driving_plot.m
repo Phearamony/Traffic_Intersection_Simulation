@@ -10,6 +10,8 @@ addpath(genpath(fullfile(ROOT_, 'class')))
 addpath(genpath(fullfile(ROOT_, 'function')))
 addpath(genpath(fullfile(ROOT_, 'simplot')))
 S_ = abl_settings();
+v2x_channel('reset');      % ideal channel unless ABL_LAT / ABL_LOSS are set
+mpc_fail_counter('reset');
 rng(S_.seed);
 PROJECT_ROOT = ROOT_;
 
@@ -145,9 +147,10 @@ end
 
 
 % --- Fuel & idle log (one entry per completed vehicle trip) ---
-FuelLog = struct('ID',{},'Dir',{},'TurnRight',{},'TurnedRight',{},'TurnLeft',{},'Exited',{}, ...
+FuelLog = struct('ID',{},'Dir',{},'TurnRight',{},'TurnedRight',{},'TurnLeft',{},'Exited',{},'trip_time',{},'Vd',{}, ...
     'fuel_total',{},'idle_gap_time',{},'idle_red_time',{});
 
+n_blocked_ = 0;   % arrivals that could not enter because the queue reached the entry
 for KK = 1:KKmax
     %% === Traffic Light Phases ===
     t = mod(KK*dt, Cycle);
@@ -190,38 +193,46 @@ for KK = 1:KKmax
     % so vehicle characteristics are also identical across scenarios.
 
     % NORTH (spawn at Y=-150, moving +Y)
+    if CARN && sched.N_intent(KK) && ~canSpawnY(CarN, -150, spawn_gap_min), n_blocked_ = n_blocked_ + 1; end   % arrival blocked: queue reaches the entry
     if CARN && sched.N_intent(KK) && canSpawnY(CarN, -150, spawn_gap_min)
         carN = Car(CarIDN, -1.5, -150); CarIDN = CarIDN + 1;
         carN.Dir = 'N';
         carN.TurnLeft = sched.N_TurnLeft(KK);  carN.TurnRight = sched.N_TurnRight(KK);
         carN.Vd = sched.N_Vd(KK);              carN.Th = sched.N_Th(KK);
+        carN.t_spawn = KK*dt;  carN.IsCAV = ~isfield(sched,'N_U') || sched.N_U(KK) < S_.pen;
         CarN(end+1) = carN;
     end
 
     % SOUTH (spawn at Y=+150, moving -Y)
+    if CARS && sched.S_intent(KK) && ~canSpawnY(CarS, 150, spawn_gap_min), n_blocked_ = n_blocked_ + 1; end   % arrival blocked: queue reaches the entry
     if CARS && sched.S_intent(KK) && canSpawnY(CarS, 150, spawn_gap_min)
         carS = Car(CarIDS, 1.5, 150); CarIDS = CarIDS + 1;
         carS.Dir = 'S';
         carS.TurnLeft = sched.S_TurnLeft(KK);  carS.TurnRight = sched.S_TurnRight(KK);
         carS.Vd = sched.S_Vd(KK);              carS.Th = sched.S_Th(KK);
+        carS.t_spawn = KK*dt;  carS.IsCAV = ~isfield(sched,'S_U') || sched.S_U(KK) < S_.pen;
         CarS(end+1) = carS;
     end
 
     % EAST (spawn at X=-150, moving +X)
+    if CARE && sched.E_intent(KK) && ~canSpawnX(CarE, -150, spawn_gap_min), n_blocked_ = n_blocked_ + 1; end   % arrival blocked: queue reaches the entry
     if CARE && sched.E_intent(KK) && canSpawnX(CarE, -150, spawn_gap_min)
         carE = Car(CarIDE, -150, 1.5); CarIDE = CarIDE + 1;
         carE.Dir = 'E';
         carE.TurnLeft = sched.E_TurnLeft(KK);  carE.TurnRight = sched.E_TurnRight(KK);
         carE.Vd = sched.E_Vd(KK);              carE.Th = sched.E_Th(KK);
+        carE.t_spawn = KK*dt;  carE.IsCAV = ~isfield(sched,'E_U') || sched.E_U(KK) < S_.pen;
         CarE(end+1) = carE;
     end
 
     % WEST (spawn at X=+150, moving -X)
+    if CARW && sched.W_intent(KK) && ~canSpawnX(CarW, 150, spawn_gap_min), n_blocked_ = n_blocked_ + 1; end   % arrival blocked: queue reaches the entry
     if CARW && sched.W_intent(KK) && canSpawnX(CarW, 150, spawn_gap_min)
         carW = Car(CarIDW, 150, -1.5); CarIDW = CarIDW + 1;
         carW.Dir = 'W';
         carW.TurnLeft = sched.W_TurnLeft(KK);  carW.TurnRight = sched.W_TurnRight(KK);
         carW.Vd = sched.W_Vd(KK);              carW.Th = sched.W_Th(KK);
+        carW.t_spawn = KK*dt;  carW.IsCAV = ~isfield(sched,'W_U') || sched.W_U(KK) < S_.pen;
         CarW(end+1) = carW;
     end
 
@@ -1027,9 +1038,9 @@ end
 
 
 %% === Plot ===
-if S_.plot, plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, fullfile(ROOT_, 'output/EW_human.png')); end
-if S_.plot, plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, fullfile(ROOT_, 'output/NS_human.png')); end
-%plot_EW_accelerations(LightLog, CarLogS, CarLogN, stop_line, fullfile(ROOT_, 'output/EW_human_ac.png'));
+if S_.plot, plot_EW_trajectories(LightLog, CarLogE, CarLogW, stop_line, fullfile(S_.outdir, 'EW_human.png')); end
+if S_.plot, plot_NS_trajectories(LightLog, CarLogS, CarLogN, stop_line, fullfile(S_.outdir, 'NS_human.png')); end
+%plot_EW_accelerations(LightLog, CarLogS, CarLogN, stop_line, fullfile(S_.outdir, 'EW_human_ac.png'));
 
 % Collect fuel stats from cars still on grid at end of simulation
 for idx = 1:length(CarN), FuelLog(end+1) = fuelEntry(CarN(idx), false); end
@@ -1039,9 +1050,9 @@ for idx = 1:length(CarW), FuelLog(end+1) = fuelEntry(CarW(idx), false); end
 
 % Plot fuel consumption & idle analysis
 out_base = fileparts(mfilename('fullpath'));
-fuel_out = fullfile(out_base, '..', 'output', 'fuel_human.png');
+fuel_out = fullfile(S_.outdir, 'fuel_human.png');
 if S_.plot, plot_fuel_consumption(FuelLog, 'Human Driving', fuel_out); end
-collect_ablation_metrics(FuelLog, 'C1_human', S_.seed, CarLog);
+collect_ablation_metrics(FuelLog, 'C1_human', S_.seed, CarLog, struct('n_blocked', n_blocked_, 'qp', mpc_fail_counter('get')));
 
 
 %% === Helper Functions ===
@@ -1163,9 +1174,11 @@ end
 
 function s = fuelEntry(car, exited)
 % Pack a car's fuel & idle counters into a FuelLog struct row.
+global KK dt
 s = struct('ID', car.ID, 'Dir', car.Dir, ...
     'TurnRight', car.TurnRight, 'TurnedRight', car.TurnedRight, ...
     'TurnLeft', car.TurnLeft, 'Exited', exited, ...
+    'trip_time', KK*dt - car.t_spawn, 'Vd', car.Vd, ...
     'fuel_total',    car.fuel_total, ...
     'idle_gap_time', car.idle_gap_time, ...
     'idle_red_time', car.idle_red_time);

@@ -25,6 +25,8 @@ addpath(genpath(fullfile(ROOT_, 'class')))
 addpath(genpath(fullfile(ROOT_, 'function')))
 addpath(genpath(fullfile(ROOT_, 'simplot')))
 S_ = abl_settings();
+v2x_channel('reset');      % ideal channel unless ABL_LAT / ABL_LOSS are set
+mpc_fail_counter('reset');
 rng(S_.seed);
 
 global CarN CarS CarE CarW TrafficLight
@@ -128,12 +130,12 @@ for KK = 1:KKmax
     end
 
     %% Spawn cars ─────────────────────────────────────────────────────────────
-    if sched.N_intent(KK) && canSpawnY(CarN,-150,spawn_gap_min)
+    if false && sched.N_intent(KK) && canSpawnY(CarN,-150,spawn_gap_min)
         c=Car(CarIDN,-1.5,-150); CarIDN=CarIDN+1; c.Dir='N';
         c.TurnLeft=sched.N_TurnLeft(KK); c.TurnRight=sched.N_TurnRight(KK);
         c.Vd=sched.N_Vd(KK); c.Th=sched.N_Th(KK); CarN(end+1)=c;
     end
-    if sched.S_intent(KK) && canSpawnY(CarS,150,spawn_gap_min)
+    if false && sched.S_intent(KK) && canSpawnY(CarS,150,spawn_gap_min)
         c=Car(CarIDS,1.5,150); CarIDS=CarIDS+1; c.Dir='S';
         c.TurnLeft=sched.S_TurnLeft(KK); c.TurnRight=sched.S_TurnRight(KK);
         c.Vd=sched.S_Vd(KK); c.Th=sched.S_Th(KK); CarS(end+1)=c;
@@ -352,7 +354,7 @@ end
 fprintf('%s\n\n', SEP);
 
 %% ── Save ────────────────────────────────────────────────────────────────────
-out_dir = fullfile(ROOT_, 'output');
+out_dir = S_.outdir;
 save(fullfile(out_dir,'estimator_comparison_results.mat'), ...
      'tau_N_pred','tau_N_act','tau_IDM_pred','tau_IDM_act', ...
      'tau_GPR_pred','tau_GPR_act', ...
@@ -360,26 +362,34 @@ save(fullfile(out_dir,'estimator_comparison_results.mat'), ...
      'com_pred','com_act');
 
 % ---- one row per (seed, estimator, sample set) for the journal tables ----
-est_csv = fullfile(out_dir, 'estimator_runs.csv');
+est_csv = S_.estcsv;
+est_hdr = 'study,point,seed,kkmax,estimator,set,n,rmse_s,mae_s,bias_s,within2_pct,within5_pct,fail_pct';
+if ~isempty(fileparts(est_csv)) && ~exist(fileparts(est_csv), 'dir'), mkdir(fileparts(est_csv)); end
+if exist(est_csv, 'file')
+    fidr = fopen(est_csv, 'r'); first = fgetl(fidr); fclose(fidr);
+    if ~ischar(first) || ~strcmp(strtrim(first), est_hdr)
+        [d_, n_, e_] = fileparts(est_csv);
+        movefile(est_csv, fullfile(d_, [n_ '_oldformat' e_]));
+    end
+end
 new_file = ~exist(est_csv, 'file');
 if S_.nolog, fid = -1; else, fid = fopen(est_csv, 'a'); end
 if fid > 0
-if new_file
-    fprintf(fid, 'seed,kkmax,estimator,set,n,rmse_s,mae_s,bias_s,within2_pct,within5_pct,fail_pct\n');
-end
-est_names = {'naive', 'idm', 'gpr'};
-for j = 1:3
-    fprintf(fid, '%g,%d,%s,own,%d,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f\n', S_.seed, KKmax, est_names{j}, ...
-        ns(j), rmse(j), mae(j), bias(j), w2(j), w5(j), infs(j));
-end
-if ~isempty(com_act)
+    if new_file, fprintf(fid, '%s\n', est_hdr); end
+    est_names = {'naive', 'idm', 'gpr'};
     for j = 1:3
-        r = com_pred(:,j) - com_act;
-        fprintf(fid, '%g,%d,%s,common,%d,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f\n', S_.seed, KKmax, est_names{j}, ...
-            numel(r), sqrt(mean(r.^2)), mean(abs(r)), mean(r), 100*mean(abs(r)<=2), 100*mean(abs(r)<=5), infs(j));
+        fprintf(fid, '%s,%s,%g,%d,%s,own,%d,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f\n', S_.study, S_.point, S_.seed, KKmax, ...
+            est_names{j}, ns(j), rmse(j), mae(j), bias(j), w2(j), w5(j), infs(j));
     end
-end
-fclose(fid);
+    if ~isempty(com_act)
+        for j = 1:3
+            r = com_pred(:,j) - com_act;
+            fprintf(fid, '%s,%s,%g,%d,%s,common,%d,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f\n', S_.study, S_.point, S_.seed, KKmax, ...
+                est_names{j}, numel(r), sqrt(mean(r.^2)), mean(abs(r)), mean(r), ...
+                100*mean(abs(r)<=2), 100*mean(abs(r)<=5), infs(j));
+        end
+    end
+    fclose(fid);
 end
 if ~S_.plot, return; end   % batch mode: no figures
 

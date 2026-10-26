@@ -82,6 +82,10 @@ classdef RSU<handle
     methods
         %% V2X RECEIVING
         function ReceivingV2X(obj, data)
+            % V2X channel model: the message may be lost, and a delivered
+            % message may describe the vehicle as it was L seconds ago.
+            data = v2x_channel('up', data);
+            if isempty(data), return; end
             vfield = ['v', num2str(data.ID)];
             dir = upper(char(data.Dir));
             obj.v2x_data.(vfield) = data;

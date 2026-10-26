@@ -26,13 +26,11 @@ if ~exist(csv_path, 'file')
 end
 
 rng(0);   % fixed jitter, so the figure is the same every time it is made
-T = readtable(csv_path, 'TextType', 'string');
-[~, ia] = unique(strcat(string(T.seed), '|', T.label), 'last');   % last row per (seed, config)
-T = T(sort(ia), :);
+T = read_runs(csv_path);   % last row per (seed, configuration)
 
 cfg   = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', 'C3_mpc_rsu_gpr'};
 names = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2', 'C2G', 'C3I', 'C3'};
-keep  = ismember(cfg, unique(T.label));
+keep  = ismember(cfg, cellstr(unique(T.label)));
 cfg = cfg(keep); names = names(keep);
 
 col_dot  = [0.70 0.70 0.70];

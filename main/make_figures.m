@@ -34,7 +34,7 @@ if nargin < 1 || isempty(seed)
     if ~exist(runs_csv, 'file')
         error('make_figures: %s not found. Run run_ablation first, or pass a seed.', runs_csv);
     end
-    T = readtable(runs_csv, 'TextType', 'string');
+    T = read_runs(runs_csv);
     C3 = T(T.label == "C3_mpc_rsu_gpr" & isfinite(T.fuel_rt_mL), :);
     if isempty(C3), error('make_figures: no C3 rows in %s.', runs_csv); end
     [~, k] = min(abs(C3.fuel_rt_mL - median(C3.fuel_rt_mL)));
@@ -57,6 +57,7 @@ old = cellfun(@getenv, names, 'UniformOutput', false);
 oldVis = get(groot, 'DefaultFigureVisible');
 cleanupObj = onCleanup(@() restore(names, old, oldVis)); %#ok<NASGU>
 
+abl_env_reset();
 setenv('ABL_BATCH', '1');
 setenv('ABL_PLOT',  '1');
 setenv('ABL_LIVE',  '0');

@@ -45,6 +45,7 @@ old = struct('b', getenv('ABL_BATCH'), 'p', getenv('ABL_PLOT'), ...
              'l', getenv('ABL_LIVE'), 'n', getenv('ABL_NOLOG'));
 cleanupObj = onCleanup(@() restoreEnv(old)); %#ok<NASGU>
 
+abl_env_reset();
 setenv('ABL_BATCH', '1');
 setenv('ABL_PLOT', '0');
 setenv('ABL_LIVE', '0');

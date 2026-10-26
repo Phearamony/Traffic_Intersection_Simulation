@@ -79,6 +79,8 @@ archive/      old versions and unused files, kept for reference (see archive/REA
 | `main/main_human_driving_plot.m` | C1: uncoordinated human driving (IDM + noise), writes the C1 metrics |
 | `main/run_ablation.m` | Runs every configuration over many seeds and summarizes the results |
 | `main/make_figures.m` | Makes every journal figure after `run_ablation` |
+| `main/run_scenarios.m` | Illustrative fixed scenarios for the paper |
+| `main/run_sweeps.m` | Stress tests (demand, right-turn share, latency, loss, penetration, drivers, asymmetry) |
 | `main/main_v2v_idm.m` | V2V-only IDM baseline |
 | `main/main_v2v_idm_rsu.m` | C2: IDM + RSU (IDM estimator) |
 | `main/main_v2v_idm_rsu_gpr.m` | C2G: IDM + RSU (GPR estimator) |
@@ -152,6 +154,57 @@ Changes made for the journal version:
 * The GPR test metrics use whole held-out seeds instead of samples drawn from the training set.
 * `compute_turn_safety` reports the time separation between each right turn and the nearest opposing
   through vehicle at the junction centre.
+
+## Extra studies: illustrative scenarios and stress tests
+
+These come on top of the main ablation and write to their own folders, so nothing is overwritten.
+
+```matlab
+cd main
+run_scenarios          % 2 fixed scenarios, about 10 runs        -> output/scenarios/
+run_sweeps             % 7 stress-test studies, 10 seeds each    -> output/sweeps/
+run_sweeps('demand')   % or one study at a time
+plot_sweeps            % redraw the sweep figures and tables at any time
+```
+
+`run_sweeps` is **resumable**: stop MATLAB at any point and call `run_sweeps` again, it skips every run
+already in `output/sweeps/sweep_runs.csv`. Delete that file (and `sweep_estimator.csv`) to start over.
+Seeds 201-210 are used, disjoint from GPR training (1-20) and the main ablation (101-120).
+
+| Study | Swept setting | Points | Configurations | Runs |
+|---|---|---|---|---|
+| `demand` | constant east-west demand 0.1 to 0.8 veh/s | 8 | C1, C2, C3I, C3 + estimator | 400 |
+| `rtshare` | right-turn share 3.75% to 52.5% of arrivals | 6 | C1, C2, C3 | 180 |
+| `latency` | one-way V2X latency 0 to 2 s | 5 | C2, C3 (C1 reference) | 110 |
+| `loss` | packet loss 0 to 60% per message | 5 | C2, C3 (C1 reference) | 110 |
+| `penetration` | CAV share 0 to 100% (rest human drivers) | 5 | C3 (C1 reference) | 60 |
+| `driver` | aggressive / nominal / cautious drivers | 3 | C1, C3I, C3 + estimator | 120 |
+| `asym` | westbound share of demand 50% to 80% | 3 | C1, C2, C3 | 90 |
+
+Definitions are in `function/sweep_definitions.m`; traffic generation in `function/make_traffic_schedule.m`;
+the V2X channel model in `function/v2x_channel.m`; mixed traffic and the two-tier right-turn decision in
+`Car.IsCAV` and `function/rt_decision.m`.
+
+Outputs in `output/sweeps/`:
+
+| File | Content |
+|---|---|
+| `sweep_<study>.png` | 8 metrics against the swept setting, mean and 95% CI per configuration |
+| `sweep_demand_estimator.png`, `sweep_driver_estimator.png` | estimator RMSE and failure rate |
+| `sweep_stats.csv` | every mean and CI behind the figures |
+| `sweep_limits.csv` | first point where each system fails: completion < 90%, gap wait > 120 s, spillback to the entry, turn separation < 2 s |
+
+Outputs in `output/scenarios/scenarioA/` and `scenarioB/`: the usual figure names (`EW_human.png`,
+`EW_idm_rsu.png`, `EW_mpc_rsu_gpr.png`, `fuel_*.png`, ...) plus `scenario_overview.png` (position and speed
+of every vehicle over time for C1, C2 and C3).
+
+Behaviour changes that also apply to the main ablation:
+
+* A right-turner without a fresh RSU advisory (lost, older than 1 s, or no plan) now decides with the C1
+  gap-acceptance rule instead of waiting for the end of green (`rt_decision.m`), the same two-tier rule as
+  the testbed.
+* New result columns: mean delay, blocked arrivals at the entry (spillback), QP-MPC fallback rate.
+  An older results CSV is renamed `*_oldformat.csv` automatically.
 
 ## Related repositories
 

@@ -45,6 +45,12 @@ classdef Car<handle
         % The controller uses EffVd() instead of Vd, see EffVd below.
         Vd_cap   = NaN;
         Vcap_min = 2.0;   % [m/s] floor, so an advisory never parks a car far upstream
+
+        % ---- fleet and V2X channel ----
+        IsCAV       = true;   % false = human driver: IDM, ignores RSU advisories (mixed traffic)
+        t_spawn     = 0;      % [s] time the vehicle entered the model
+        x2v_queue   = {};     % advisories in transit (v2x_channel, downlink latency)
+        X2V_TIMEOUT = 1.0;    % [s] an advisory older than this is ignored (two steps)
     end
 
     methods
@@ -202,6 +208,12 @@ classdef Car<handle
         % end
 
         function Acel = MPC(H, P)
+            % Human driver in mixed traffic: IDM instead of the QP-MPC
+            if ~H.IsCAV
+                Acel = Car.IDM(H, P);
+                return;
+            end
+            mpc_fail_counter('solve');
             % DROP-IN OPTIMIZED MPC (QP, condensed form, sparse, warm-start)
             % Interface unchanged: Acel = MPC(H,P)
             % Uses globals: dt, Vd
@@ -382,6 +394,7 @@ classdef Car<handle
             end
 
             if exitflag <= 0 || isempty(U) || any(~isfinite(U))
+                mpc_fail_counter('fail');
                 % QP FAILED - build a full T-length fallback vector so that
                 % the warm-start shift below always produces a T-length result.
                 % Previously only U(1) was set, leaving U(2:end) from a
@@ -511,11 +524,19 @@ classdef Car<handle
         end
 
         %% Store (or clear) the RSU recommended speed after each X2V message
-        function SetSpeedCap(obj, v_rec, enabled)
-            if enabled && ~isempty(v_rec) && isfinite(v_rec) && v_rec >= 0
-                obj.Vd_cap = v_rec;
-            else
-                obj.Vd_cap = NaN;
+        % The cap is taken from the newest advisory the vehicle actually
+        % received (after channel latency and loss) and is still fresh; the
+        % v_rec argument is kept for compatibility with the main scripts.
+        % Human drivers in mixed traffic ignore it.
+        function SetSpeedCap(obj, v_rec, enabled) %#ok<INUSL>
+            obj.Vd_cap = NaN;
+            if ~enabled || ~obj.IsCAV, return; end
+            x2v = obj.GetLastX2V();
+            if ~isempty(x2v) && isstruct(x2v) && isfield(x2v, 'recommended_V')
+                v = x2v.recommended_V;
+                if ~isempty(v) && isfinite(v) && v >= 0
+                    obj.Vd_cap = v;
+                end
             end
         end
 
@@ -587,18 +608,24 @@ classdef Car<handle
         %% Receive X2V data from RSU
         % data should contain: t, turn_signal, recommended_V, recommended_Ac, priority, message
         function ReceivingX2V(obj, data)
-            obj.x2v_data = data;
-            
-            % Apply turn signal if provided
-            if isfield(data, 'turn_signal') && ~isempty(data.turn_signal)
-                obj.Turn_signal = data.turn_signal;
+            % The message passes the V2X channel model first (latency, loss);
+            % with the default ideal channel it is delivered at once.
+            pkts = v2x_channel('down', obj, data);
+            for k = 1:numel(pkts)
+                d = pkts{k};
+                obj.x2v_data = d;
+
+                % Apply turn signal if provided
+                if isfield(d, 'turn_signal') && ~isempty(d.turn_signal)
+                    obj.Turn_signal = d.turn_signal;
+                end
+
+                % Store in permanent history
+                obj.StoreX2VReceived(d);
+
+                % Store in temp (short) history
+                obj.StoreX2VReceivedShort(d);
             end
-            
-            % Store in permanent history
-            obj.StoreX2VReceived(data);
-            
-            % Store in temp (short) history
-            obj.StoreX2VReceivedShort(data);
         end
 
         %% Store received X2V data (permanent)
@@ -686,8 +713,16 @@ classdef Car<handle
         end
 
         %% Get last received X2V data
+        % Returns [] when the newest advisory is older than X2V_TIMEOUT
+        % (lost or delayed messages), so the vehicle falls back to its own rule.
         function data = GetLastX2V(obj)
+            global KK dt
             data = obj.x2v_data;
+            if ~isempty(data) && isstruct(data) && isfield(data, 't') && ~isempty(KK) && ~isempty(dt)
+                if (KK*dt - data.t) > obj.X2V_TIMEOUT + 1e-9
+                    data = [];
+                end
+            end
         end
 
         %% Check if car has pending turn signal from RSU

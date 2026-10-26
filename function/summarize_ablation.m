@@ -18,13 +18,11 @@ if nargin < 1
 end
 out_dir = fileparts(csv_path);
 
-T = readtable(csv_path, 'TextType', 'string');
-% keep the LAST row for each (seed, label), in case a run was repeated
-[~, ia] = unique(strcat(string(T.seed), '|', T.label), 'last');
-T = T(sort(ia), :);
+T = read_runs(csv_path);   % last row per (seed, configuration)
 
 metrics = {'fuel_rt_mL', 'fuel_str_mL', 'gap_rt_s', 'rt_completion', ...
-           'n_exited', 'red_str_s', 'sep_min_s', 'n_sep_below2'};
+           'n_exited', 'red_str_s', 'sep_min_s', 'n_sep_below2', ...
+           'delay_rt_s', 'delay_str_s', 'delay_all_s', 'n_blocked', 'qp_fail_pct'};
 labels  = unique(T.label, 'stable');
 
 % ---------- per-configuration statistics ----------
