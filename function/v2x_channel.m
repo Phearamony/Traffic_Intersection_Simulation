@@ -17,7 +17,12 @@ function out = v2x_channel(mode, varargin)
 %            sub-step latency is rounded up to one step). A CAV ignores an
 %            advisory older than Car.X2V_TIMEOUT and falls back to local
 %            gap acceptance (rt_decision.m).
-%   With L = 0 and p = 0 the channel is ideal and changes nothing.
+%   Human drivers (mixed traffic) have no V2X: with ABL_SENSE = 'v2x'
+%   (default) their state messages never reach the RSU, so the RSU neither
+%   sees them nor plans around them. With ABL_SENSE = 'all' the RSU senses
+%   them as if by roadside camera or radar.
+%   With L = 0, p = 0 and a fully connected fleet the channel is ideal and
+%   changes nothing.
 %
 %   Losses are drawn from their own random stream (seed 1e6 + ABL_SEED),
 %   so the traffic and the driver noise are the same at every loss level.
@@ -25,7 +30,8 @@ function out = v2x_channel(mode, varargin)
 persistent cfg rs
 if isempty(cfg) || strcmp(mode, 'reset')
     S = abl_settings();
-    cfg = struct('lat', max(S.lat, 0), 'loss', min(max(S.loss, 0), 1), 'dt', 0.5);
+    cfg = struct('lat', max(S.lat, 0), 'loss', min(max(S.loss, 0), 1), 'dt', 0.5, ...
+                 'sense', S.sense);
     rs = RandStream('mt19937ar', 'Seed', 1e6 + S.seed);
     if strcmp(mode, 'reset'), out = []; return; end
 end
@@ -33,6 +39,9 @@ end
 switch mode
     case 'up'
         data = varargin{1};
+        if isfield(data, 'IsCAV') && ~data.IsCAV && ~strcmp(cfg.sense, 'all')
+            out = []; return;      % human driver: no V2X, invisible to the RSU
+        end
         if cfg.loss > 0 && rand(rs) < cfg.loss
             out = []; return;
         end
