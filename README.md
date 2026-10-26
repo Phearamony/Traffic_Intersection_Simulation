@@ -106,7 +106,7 @@ delete ../output/ablation_runs.csv            % 2. start a fresh study (if the f
 delete ../output/estimator_runs.csv
 run_ablation(101:120, 720, true)  % 3. 20 seeds x all configurations, 360 s each,
                                   %    plus the estimator comparison per seed
-make_figures                      % 4. every simulation figure, into output/figures/
+make_figures                      % 4. every simulation figure, into output/ (usual names)
 ```
 
 `make_figures` re-runs one representative seed (the one whose C3 right-turner fuel is closest to the
@@ -123,7 +123,7 @@ differences (`ablation_paired.png`). `make_figures(107)` uses a seed of your cho
 | `output/ablation_pairs.csv` | paired comparisons over seeds: mean difference, 95% CI, Wilcoxon and paired t-test p-values |
 | `output/estimator_runs.csv` | per seed and estimator: RMSE, MAE, bias, share within 2 s / 5 s, failure rate, on each estimator's own samples and on the common sample set |
 | `output/ablation_errors.log` | any run that failed, with the error |
-| `output/figures/` | all journal figures with paper numbering (from `make_figures`) |
+| `output/ablation_summary.png`, `output/ablation_paired.png` | multi-seed summary and paired-difference figures (from `make_figures`) |
 
 Settings come from `function/abl_settings.m` (environment variables `ABL_SEED`, `ABL_KKMAX`, `ABL_PLOT`,
 `ABL_LIVE`, `ABL_NOLOG`, `ABL_VREC`). Running a single script by hand still works: it uses seed 1, 720 steps and live plots.

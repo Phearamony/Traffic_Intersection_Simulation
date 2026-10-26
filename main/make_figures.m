@@ -13,7 +13,7 @@ function make_figures(seed, kkmax)
 %        CSVs (ABL_NOLOG = 1), so the statistics are not changed.
 %     2. Runs the estimator comparison for the same seed with its figures.
 %     3. Draws the multi-seed summary and paired-difference figures.
-%     4. Copies everything into output/figures/.
+%     All figures keep their usual names and are written to output/.
 %
 %   Representative seed: the seed whose C3 fuel per right-turner is
 %   closest to the median over all seeds, so the trajectory figures show a
@@ -83,45 +83,22 @@ else
     warning('make_figures: no %s, summary figures skipped.', runs_csv);
 end
 
-% ---- collect into output/figures ----
-figdir = fullfile(out, 'figures');
-if ~exist(figdir, 'dir'), mkdir(figdir); end
-files = { ...
-  'gpr_model_diagnostics.png',          'Fig3_gpr_diagnostics.png';
-  'estimator_comparison_scatter.png',   'Fig3b_estimator_scatter.png';
-  'estimator_comparison_residuals.png', 'Fig3c_estimator_residuals.png';
-  'EW_human.png',          'Fig4a_traj_C1.png';
-  'EW_idm.png',            'Fig4x_traj_V2V_IDM.png';
-  'EW_mpc.png',            'Fig4x_traj_V2V_MPC.png';
-  'EW_idm_rsu.png',        'Fig4b_traj_C2.png';
-  'EW_idm_rsu_gpr.png',    'Fig4x_traj_C2G.png';
-  'EW_mpc_rsu.png',        'Fig4x_traj_C3I.png';
-  'EW_mpc_rsu_gpr.png',    'Fig4c_traj_C3.png';
-  'fuel_human.png',        'Fig5a_fuel_C1.png';
-  'fuel_idm.png',          'Fig5x_fuel_V2V_IDM.png';
-  'fuel_mpc.png',          'Fig5x_fuel_V2V_MPC.png';
-  'fuel_idm_rsu.png',      'Fig5b_fuel_C2.png';
-  'fuel_idm_rsu_gpr.png',  'Fig5x_fuel_C2G.png';
-  'fuel_mpc_rsu.png',      'Fig5x_fuel_C3I.png';
-  'fuel_mpc_rsu_gpr.png',  'Fig5c_fuel_C3.png';
-  'ablation_summary.png',  'Fig6_ablation_summary.png';
-  'ablation_paired.png',   'Fig7_ablation_paired.png'};
+% ---- list what was written (original file names, all in output/) ----
+files = {'gpr_model_diagnostics.png', 'estimator_comparison_scatter.png', 'estimator_comparison_residuals.png', ...
+         'EW_human.png', 'EW_idm.png', 'EW_mpc.png', 'EW_idm_rsu.png', 'EW_idm_rsu_gpr.png', ...
+         'EW_mpc_rsu.png', 'EW_mpc_rsu_gpr.png', ...
+         'fuel_human.png', 'fuel_idm.png', 'fuel_mpc.png', 'fuel_idm_rsu.png', 'fuel_idm_rsu_gpr.png', ...
+         'fuel_mpc_rsu.png', 'fuel_mpc_rsu_gpr.png', ...
+         'ablation_summary.png', 'ablation_paired.png'};
 n_ok = 0;
-for i = 1:size(files, 1)
-    src = fullfile(out, files{i,1});
-    if exist(src, 'file')
-        copyfile(src, fullfile(figdir, files{i,2}));
+for i = 1:numel(files)
+    if exist(fullfile(out, files{i}), 'file')
         n_ok = n_ok + 1;
     else
-        fprintf(2, 'missing: %s\n', files{i,1});
+        fprintf(2, 'missing: %s\n', files{i});
     end
 end
-fid = fopen(fullfile(figdir, 'README.txt'), 'w');
-fprintf(fid, 'Figures made by make_figures on %s\nTrajectory and fuel figures: seed %d, %d steps.\n', ...
-        datestr(now), seed, kkmax);
-fprintf(fid, 'Summary figures: all seeds in ablation_runs.csv.\n');
-fclose(fid);
-fprintf('\n%d of %d figures in %s (seed %d)\n', n_ok, size(files,1), figdir, seed);
+fprintf('\n%d of %d figures in %s (trajectory and fuel figures from seed %d)\n', n_ok, numel(files), out, seed);
 end
 
 function runIsolated(script_path)
