@@ -118,6 +118,103 @@ watch_main('C3', 201, 'ABL_SCHED', 'const', 'ABL_PEN', '0.5')       % 50% CAVs
 animation, and writes no results row, no figure and no `simplot/traffic_schedule.mat`.
 Pressing F5 on a `main_*.m` script still works as before, but that does save figures and a results row.
 
+## How to run everything (step by step)
+
+All commands go in the MATLAB Command Window. Close MATLAB, the `output` folder in Explorer, and pause
+OneDrive (if the repo is inside it) before pulling, so no file is locked.
+
+**Before you start** (PowerShell, in the repo folder):
+
+```
+git pull origin main
+```
+
+Then in MATLAB:
+
+```matlab
+cd main
+```
+
+| Step | Command | What it does | Output |
+|---|---|---|---|
+| 0 (optional) | `watch_main('C3')` | Live animation of one configuration, nothing saved | none |
+| 1 | `main_human_driving_gpr_train` | Train the GPR model once (seeds 1-16 train, 17-20 test) | `simplot/gpr_arrival_model.mat`, `output/gpr_holdout_metrics.csv`, `output/gpr_model_diagnostics.png` |
+| 2 | `delete ../output/ablation_runs.csv` and `delete ../output/estimator_runs.csv` | Start the results fresh (a "file not found" warning is fine) | |
+| 3 | `run_ablation(101:105)` | Quick test: 5 seeds x 7 configurations | rows in `output/ablation_runs.csv` |
+| | | Check: every configuration printed a `[metrics]` line and `output/ablation_errors.log` is empty or missing. Then repeat step 2. | |
+| 4 | `run_ablation(101:120, 720, true)` | Full main ablation: 20 seeds x 7 configurations + estimator comparison (about 4x step 3) | `output/ablation_runs.csv`, `ablation_stats.csv`, `ablation_pairs.csv`, `estimator_runs.csv` |
+| 5 | `make_figures` | Main figures from one typical seed + multi-seed summary (adds no rows to the CSVs) | `output/EW_*.png`, `NS_*.png`, `fuel_*.png`, `estimator_comparison_*.png`, `ablation_summary.png`, `ablation_paired.png` |
+| 6 | `run_scenarios` | Illustrative scenarios A and B | `output/scenarios/` |
+| 7 | `run_sweeps` | All stress tests, seeds 201-210 (about 1,070 runs, the longest step). Resumable: Ctrl+C any time, run again to continue | `output/sweeps/sweep_runs.csv`, `sweep_estimator.csv` |
+| 8 | `plot_sweeps` | Sweep figures and tables (only reads the CSVs, re-run any time) | `output/sweeps/sweep_<study>.png`, `sweep_stats.csv`, `sweep_limits.csv` |
+
+Step 7 one study at a time instead:
+
+```matlab
+run_sweeps('demand')        % demand 0.1-0.8 veh/s
+run_sweeps('rtshare')       % right-turn share
+run_sweeps('latency')       % V2X latency
+run_sweeps('loss')          % packet loss
+run_sweeps('penetration')   % mixed traffic, CAV share 0-100%
+run_sweeps('driver')        % aggressive / nominal / cautious drivers
+run_sweeps('asym')          % unbalanced east-west demand
+```
+
+To start the sweeps over, delete the `output/sweeps/` folder.
+
+**If something fails:** the runners do not stop on an error. They write it to `output/ablation_errors.log`
+(main ablation) or `output/sweeps/sweep_errors.log` (sweeps) and continue.
+
+**Files that hold the results** (for the manuscript tables): `output/ablation_stats.csv`,
+`output/ablation_pairs.csv`, `output/estimator_runs.csv`, `output/gpr_holdout_metrics.csv`,
+`output/scenarios/scenario_runs.csv`, `output/sweeps/sweep_stats.csv`, `output/sweeps/sweep_limits.csv`.
+
+### Function inputs
+
+| Call | Inputs | Defaults |
+|---|---|---|
+| `watch_main(name, seed, 'ABL_...', 'value', ...)` | `name`: `C1`, `V2V_IDM`, `V2V_MPC`, `C2`, `C2G`, `C3I`, `C3`, `HUMAN`, or a script name. `seed`: any whole number. Then any number of setting pairs (table below) | `'C3'`, `101` |
+| `run_ablation(seeds, kkmax, with_estimator)` | `seeds`: list such as `101:105` or `[101 107]`. `kkmax`: steps of 0.5 s. `with_estimator`: `true`/`false` | `101:120`, `720`, `false` |
+| `run_sweeps(studies, seeds)` | `studies`: one name, a cell list such as `{'latency','loss'}`, or `[]` for all | all studies, `201:210` |
+| `run_scenarios(names)` | `'scenarioA'`, `'scenarioB'`, or a cell list | both |
+| `make_figures(seed, kkmax)` | `seed`: seed for the trajectory figures | typical seed, `720` |
+| `plot_sweeps`, `main_human_driving_gpr_train`, `demo_main` | none | |
+
+Seeds: 1-20 GPR training/test, 101-120 main ablation, 201-210 sweeps. Watching a seed from these ranges
+with the same settings shows exactly the logged run.
+
+### Settings for `watch_main` (and hand runs)
+
+| Setting | Values | Default |
+|---|---|---|
+| `ABL_SCHED` | `'staged'` (light, medium, heavy), `'const'`, `'scenarioA'`, `'scenarioB'` | `'staged'` |
+| `ABL_DEMAND` | east-west flow [veh/s], used with `'const'` | `0.4` |
+| `ABL_RT` | P(right turn given not left), 0 to 1 | `0.15` |
+| `ABL_ASYM` | westbound share of east-west flow, 0 to 1 | `0.5` |
+| `ABL_DRIVER` | `'nominal'`, `'aggressive'`, `'cautious'` | `'nominal'` |
+| `ABL_PEN` | CAV share, 0 to 1; the rest are human drivers | `1` |
+| `ABL_SENSE` | `'v2x'` (RSU cannot see human cars), `'all'` (RSU sees them but cannot instruct them) | `'v2x'` |
+| `ABL_LAT` | one-way V2X latency [s] | `0` |
+| `ABL_LOSS` | packet loss per message, 0 to 1 | `0` |
+| `ABL_VREC` | `1` = CAVs follow the RSU speed advice, `0` = ignore it | `1` |
+| `ABL_KKMAX` | number of 0.5 s steps | `720` (360 s) |
+
+Examples:
+
+```matlab
+watch_main('C1', 105)
+watch_main('C3', 1, 'ABL_SCHED', 'scenarioB')
+watch_main('C3', 201, 'ABL_SCHED', 'const', 'ABL_DEMAND', '0.7', 'ABL_DRIVER', 'aggressive')
+watch_main('C3', 201, 'ABL_SCHED', 'const', 'ABL_PEN', '0.5')    % mixed traffic
+```
+
+In mixed traffic (`ABL_PEN` below 1), human cars drive with IDM plus noise, have no V2X, ignore the RSU,
+and decide right turns with the C1 gap rule. In the animation they have a thick black outline.
+`ABL_PEN` has no effect on C1, where every car is already human.
+
+Pressing F5 on a `main_*.m` script also works (seed 1, live animation), but that **does** save figures
+to `output/` and adds a row to `output/ablation_runs.csv`. Use `watch_main` when you only want to look.
+
 ## Journal experiments (multi-seed ablation)
 
 Run order, from the MATLAB command window in `main/`:
@@ -148,10 +245,9 @@ differences (`ablation_paired.png`). `make_figures(107)` uses a seed of your cho
 | `output/ablation_errors.log` | any run that failed, with the error |
 | `output/ablation_summary.png`, `output/ablation_paired.png` | multi-seed summary and paired-difference figures (from `make_figures`) |
 
-Settings come from `function/abl_settings.m` (environment variables `ABL_SEED`, `ABL_KKMAX`, `ABL_PLOT`,
-`ABL_LIVE`, `ABL_NOLOG`, `ABL_VREC`). Running a single script by hand still works: it uses seed 1, 720 steps and live plots.
-**Run `main_human_driving.m` first** whenever you change the seed or the horizon, because it regenerates
-`simplot/traffic_schedule.mat`.
+Settings come from `function/abl_settings.m` (environment variables `ABL_*`, listed in that file and in
+[How to run everything](#how-to-run-everything-step-by-step)). The runners regenerate
+`simplot/traffic_schedule.mat` for every seed; for a hand run with F5, run `main_human_driving.m` first.
 
 Changes made for the journal version:
 
