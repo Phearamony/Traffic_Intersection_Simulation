@@ -31,10 +31,11 @@ right-turning vehicle at the start of every green phase.
 3. **QP-MPC controller:** each CAV runs a finite-horizon quadratic-programming MPC that tracks its
    assigned crossing time while respecting acceleration and safe-gap constraints.
 
-## Key results
+## Key results (CISE 2026 paper)
 
-A factorial ablation was run with identical stochastic traffic, signal timing and geometry for every
-configuration (`output/ablation_summary.csv`):
+These are the single-seed results of the conference paper, from the code before the journal changes
+(`archive/output_cise2026/ablation_summary.csv`). The journal version reruns the ablation over 20 seeds
+with the fixes listed under *Journal experiments*; its results replace this table once available.
 
 | Config | Controller | RSU estimator | Right-turn fuel [mL] | Straight fuel [mL] | Gap wait [s] |
 |---|---|---|---|---|---|
@@ -57,11 +58,17 @@ configuration (`output/ablation_summary.csv`):
 ## Repository structure
 
 ```
-class/      Car.m (IDM / QP-MPC vehicle), RSU.m (V2X buffer, GPR estimator, slot search)
-function/   IDM, trajectory / acceleration / fuel plotting, ablation metrics
-main/       Simulation entry points (one script per configuration)
-simplot/    Intersection drawing, initial values, trained GPR model, shared traffic schedule
-output/     Generated figures, videos and ablation summary
+class/        Car.m (IDM / QP-MPC vehicle), RSU.m (V2X buffer, GPR estimator, slot search)
+function/     run settings, metrics, statistics and plotting functions
+  abl_settings.m            seed, horizon, plot and logging switches for every script
+  collect_ablation_metrics  one results row per (seed, configuration)
+  compute_turn_safety       time gap between each right turn and oncoming traffic
+  summarize_ablation        means, 95% CIs, paired tests
+  plot_*                    trajectory, fuel and multi-seed summary figures
+main/         entry points: one script per configuration, plus run_ablation and make_figures
+simplot/      intersection drawing, initial values, trained GPR model, shared traffic schedule
+output/       figures (EW_*, NS_*, fuel_*, estimator_*, ablation_*), results CSVs, demo video
+archive/      old versions and unused files, kept for reference (see archive/README.md)
 ```
 
 ### Main scripts

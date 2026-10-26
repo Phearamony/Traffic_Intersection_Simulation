@@ -1,0 +1,14 @@
+# MATLAB autosave and temporary files
+*.asv
+*.m~
+*.autosave
+slprj/
+*.mexw64.pdb
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# run logs (results CSVs and figures are kept)
+output/ablation_errors.log
