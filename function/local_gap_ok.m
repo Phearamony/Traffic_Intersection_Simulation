@@ -1,4 +1,4 @@
-function ok = local_gap_ok(car, opp, oppDir, turn_release)
+function ok = local_gap_ok(car, opp, oppDir, turn_release, bigGap)
 %LOCAL_GAP_OK  Driver's own gap acceptance for a right-turner at its waiting point.
 %   Same rule as the uncoordinated baseline C1 (main_human_driving_plot.m):
 %   the turn is accepted when every opposing vehicle that has not yet
@@ -9,10 +9,14 @@ function ok = local_gap_ok(car, opp, oppDir, turn_release)
 %
 %   opp     array of Car objects on the opposing approach
 %   oppDir  'E','W','N','S' : direction the opposing vehicles travel
+%   bigGap  extra margin [s] on top of turn time + reaction time
+%           (default 4 s, the C1 human rule; 0 = on-board check of a CAV
+%           that the RSU told to proceed)
 
 minGapDist = 6.0;   % [m]
 rt_react   = 0.7;   % [s]
 rt_bigGap  = 4.0;   % [s]
+if nargin >= 5 && ~isempty(bigGap), rt_bigGap = bigGap; end
 
 % turn time from the waiting point (same geometry as estimateTurnTime in C1)
 turn_wait = 5;

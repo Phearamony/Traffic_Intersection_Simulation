@@ -8,7 +8,7 @@ function plot_sweeps(out_dir)
 %     sweep_<study>.png      8 panels against the swept setting: fuel per
 %                            right-turner and per straight vehicle, gap wait,
 %                            right-turn completion, mean delay, throughput,
-%                            blocked arrivals, minimum turn separation.
+%                            blocked arrivals, turn conflicts.
 %                            Line per configuration: mean over seeds with
 %                            95% CI; dashed line = reference configuration
 %                            (C1 where the setting does not apply to it).
@@ -19,10 +19,13 @@ function plot_sweeps(out_dir)
 %     sweep_stats.csv        study, point, label, metric, n, mean, std, ci95
 %     sweep_limits.csv       for every study and configuration, the first
 %                            point where each failure criterion is met:
-%                              completion   mean right-turn completion < 90%
+%                              completion   mean right-turn completion falls below
+%                                           80% of its value at the base point
+%                                           (first point; 'nominal' for drivers)
 %                              gap          mean gap wait > 120 s (one cycle)
 %                              spillback    mean blocked arrivals >= 1 per run
-%                              separation   mean minimum turn separation < 2 s
+%                              conflicts    mean number of turns with an oncoming
+%                                           gap < 2 s is at least 1 per run
 %                            NaN = never met in the swept range.
 
 root = fileparts(fileparts(mfilename('fullpath')));
@@ -42,10 +45,10 @@ short  = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2', 'C2G', 'C3I', 'C3'};
 colors = [0.45 0.45 0.45; 0.55 0.35 0.65; 0.30 0.60 0.75; 0.20 0.45 0.80; 0.35 0.70 0.35; 0.90 0.60 0.10; 0.80 0.20 0.10];
 markers = {'s', 'v', '^', 'o', 'd', 'p', 'o'};
 
-mets  = {'fuel_rt_mL', 'fuel_str_mL', 'gap_rt_s', 'rt_completion', 'delay_all_s', 'n_exited', 'n_blocked', 'sep_min_s'};
-mlab  = {'Fuel per right-turner [mL]', 'Fuel per straight vehicle [mL]', 'Gap wait [s]', ...
+mets  = {'fuel_rt_mL', 'fuel_L100km', 'gap_rt_s', 'rt_completion', 'delay_all_s', 'n_exited', 'n_blocked', 'n_conflict'};
+mlab  = {'Fuel per right-turner [mL]', 'Fuel, all vehicles [L/100 km]', 'Gap wait [s]', ...
          'Right-turn completion [%]', 'Mean delay [s]', 'Vehicles through [veh]', ...
-         'Blocked arrivals [veh]', 'Min. turn separation [s]'};
+         'Blocked arrivals [veh]', 'Turn conflicts per run (gap < 2 s)'};
 mscale = [1 1 1 100 1 1 1 1];
 
 statRows = {}; limRows = {};
@@ -99,16 +102,19 @@ for si = 1:numel(studies)
     close(f);
 
     % ---- failure limits ----
+    % base point: 'nominal' for the driver study, otherwise the first point
+    ib = 1; if isCat && any(strcmp(ptxt, 'nominal')), ib = find(strcmp(ptxt, 'nominal'), 1); end
     for li = 1:numel(labs)
         lab = labs{li};
         crit = nan(1, 4);
+        c0 = mean(Ts.rt_completion(Ts.label == lab & Ts.point == ptxt{ib}), 'omitnan');
         for p = 1:numel(ptxt)
             sel = Ts.label == lab & Ts.point == ptxt{p};
             mc = mean(Ts.rt_completion(sel), 'omitnan');
             mg = mean(Ts.gap_rt_s(sel), 'omitnan');
             mb = mean(Ts.n_blocked(sel), 'omitnan');
-            ms = mean(Ts.sep_min_s(sel), 'omitnan');
-            hit = [mc < 0.9, mg > 120, mb >= 1, ms < 2];
+            mk = mean(Ts.n_conflict(sel), 'omitnan');
+            hit = [mc < 0.8 * c0, mg > 120, mb >= 1, mk >= 1];
             for c = 1:4
                 if hit(c) && isnan(crit(c)), crit(c) = p; end
             end
@@ -157,8 +163,8 @@ if ~isempty(statRows)
                fullfile(out_dir, 'sweep_stats.csv'));
 end
 if ~isempty(limRows)
-    L = cell2table(limRows, 'VariableNames', {'study', 'label', 'completion_below_90pct', ...
-                   'gap_above_120s', 'spillback', 'separation_below_2s'});
+    L = cell2table(limRows, 'VariableNames', {'study', 'label', 'completion_drop_20pct', ...
+                   'gap_above_120s', 'spillback', 'conflicts'});
     writetable(L, fullfile(out_dir, 'sweep_limits.csv'));
     disp(L);
 end

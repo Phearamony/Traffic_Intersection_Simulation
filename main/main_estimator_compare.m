@@ -1,7 +1,7 @@
 %% Estimator Comparison: Naive Kinematic vs IDM Forward Sim vs GPR
 %
-% At every green-phase start, three estimators predict each vehicle's
-% stop-line arrival time τ from its current (distance, velocity) state:
+% At every green start and every 4 s during green, three estimators predict
+% each vehicle's stop-line arrival time τ from its current state:
 %
 %   (A) Naive    — τ = dist / vel          (free-flow, no car-following)
 %   (B) IDM      — forward IDM simulation  (reference [7] method)
@@ -107,17 +107,20 @@ for KK = 1:KKmax
     for i = 1:length(CarE), RSU1.ReceivingV2X(CarE(i).SendingV2X(tsec)); end
     for i = 1:length(CarW), RSU1.ReceivingV2X(CarW(i).SendingV2X(tsec)); end
 
-    %% Green-phase starts: run all three estimators ──────────────────────────
-    EW_green_start = strcmp(TrafficLight.EW,'green') && ~strcmp(prev_EW,'green');
-    NS_green_start = strcmp(TrafficLight.NS,'green') && ~strcmp(prev_NS,'green');
+    %% Run all three estimators at every green start and every EVAL_EVERY s
+    %  during green, which is when the RSU uses them (it re-optimises
+    %  whenever the vehicle set near the junction changes).
+    RSU1.t_now = tsec;         % signal-timing input of the GPR model
+    EVAL_EVERY = 4;            % [s]
+    onGrid = abs(mod(tsec, EVAL_EVERY)) < 1e-9;
+    EW_green_start = strcmp(TrafficLight.EW,'green') && (~strcmp(prev_EW,'green') || onGrid);
+    NS_green_start = strcmp(TrafficLight.NS,'green') && (~strcmp(prev_NS,'green') || onGrid);
 
     if EW_green_start
-        fprintf('[t=%.1f] EW GREEN START\n', tsec);
         CompLog = logEstimates(RSU1, 'E', tsec, TrafficLight, CompLog, stop_line);
         CompLog = logEstimates(RSU1, 'W', tsec, TrafficLight, CompLog, stop_line);
     end
     if NS_green_start
-        fprintf('[t=%.1f] NS GREEN START\n', tsec);
         CompLog = logEstimates(RSU1, 'N', tsec, TrafficLight, CompLog, stop_line);
         CompLog = logEstimates(RSU1, 'S', tsec, TrafficLight, CompLog, stop_line);
     end

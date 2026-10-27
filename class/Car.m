@@ -44,7 +44,9 @@ classdef Car<handle
         % Vd_cap: recommended speed from the RSU (NaN = no advisory).
         % The controller uses EffVd() instead of Vd, see EffVd below.
         Vd_cap   = NaN;
-        Vcap_min = 2.0;   % [m/s] floor, so an advisory never parks a car far upstream
+        Vcap_frac = 0.5;  % advisory floor as a share of Vd: a car is never asked to crawl
+        ADV_ZONE  = 80;   % [m] advisories are followed only this close to the stop line
+        STOP_LINE = 10;   % [m] stop line distance from the centre (same as the RSU)
 
         % ---- fleet and V2X channel ----
         IsCAV       = true;   % false = human driver: IDM, ignores RSU advisories (mixed traffic)
@@ -511,26 +513,41 @@ classdef Car<handle
         %% ==================== RSU SPEED ADVISORY ====================
         %% Desired speed actually used by the controller
         % Without an advisory this is Vd. With an advisory v_rec it is
-        % min(Vd, max(v_rec, 0.8*V, Vcap_min)): the vehicle slows toward the
-        % recommended speed, but the target never drops below 80 % of the
-        % current speed in one step, so neither controller is asked for an
-        % abrupt stop by the advisory alone (stopping is done by the gap
-        % constraint / virtual leaders, as before).
+        % min(Vd, max(v_rec, Vcap_frac*Vd)). The floor matters on a single
+        % lane: a slowed vehicle slows every vehicle behind it, so an
+        % advisory may delay a vehicle but never turn it into a moving
+        % bottleneck. Stopping is still done by the gap constraint and the
+        % stop-line / wait-point leaders, as before.
         function v = EffVd(obj)
             v = obj.Vd;
             if ~isempty(obj.Vd_cap) && isfinite(obj.Vd_cap)
-                v = min(obj.Vd, max([obj.Vd_cap, 0.8*obj.V, obj.Vcap_min]));
+                v = min(obj.Vd, max(obj.Vd_cap, obj.Vcap_frac * obj.Vd));
+            end
+        end
+
+        %% Distance to the own stop line [m] (negative once past it)
+        function d = DistToStopLine(obj)
+            switch obj.Dir
+                case 'E', d = -obj.STOP_LINE - obj.X;
+                case 'W', d =  obj.X - obj.STOP_LINE;
+                case 'N', d = -obj.STOP_LINE - obj.Y;
+                case 'S', d =  obj.Y - obj.STOP_LINE;
+                otherwise, d = Inf;
             end
         end
 
         %% Store (or clear) the RSU recommended speed after each X2V message
         % The cap is taken from the newest advisory the vehicle actually
-        % received (after channel latency and loss) and is still fresh; the
-        % v_rec argument is kept for compatibility with the main scripts.
-        % Human drivers in mixed traffic ignore it.
+        % received (after channel latency and loss) and is still fresh, and
+        % only inside the advisory zone (ADV_ZONE m before the stop line),
+        % so vehicles near the entry are never slowed. The v_rec argument
+        % is kept for compatibility with the main scripts. Human drivers in
+        % mixed traffic ignore it.
         function SetSpeedCap(obj, v_rec, enabled) %#ok<INUSL>
             obj.Vd_cap = NaN;
             if ~enabled || ~obj.IsCAV, return; end
+            d = obj.DistToStopLine();
+            if d <= 0 || d > obj.ADV_ZONE, return; end
             x2v = obj.GetLastX2V();
             if ~isempty(x2v) && isstruct(x2v) && isfield(x2v, 'recommended_V')
                 v = x2v.recommended_V;

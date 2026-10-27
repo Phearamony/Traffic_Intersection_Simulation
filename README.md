@@ -139,7 +139,7 @@ cd main
 |---|---|---|---|
 | 0 (optional) | `watch_main('C3')` | Live animation of one configuration, nothing saved | none |
 | 1 | `main_human_driving_gpr_train` | Train the GPR model once (seeds 1-16 train, 17-20 test) | `simplot/gpr_arrival_model.mat`, `output/gpr_holdout_metrics.csv`, `output/gpr_model_diagnostics.png` |
-| 2 | `delete ../output/ablation_runs.csv` and `delete ../output/estimator_runs.csv` | Start the results fresh (a "file not found" warning is fine) | |
+| 2 | see **Fresh start** below | Remove old results (needed after every code update) | |
 | 3 | `run_ablation(101:105)` | Quick test: 5 seeds x 7 configurations | rows in `output/ablation_runs.csv` |
 | | | Check: every configuration printed a `[metrics]` line and `output/ablation_errors.log` is empty or missing. Then repeat step 2. | |
 | 4 | `run_ablation(101:120, 720, true)` | Full main ablation: 20 seeds x 7 configurations + estimator comparison (about 4x step 3) | `output/ablation_runs.csv`, `ablation_stats.csv`, `ablation_pairs.csv`, `estimator_runs.csv` |
@@ -158,6 +158,7 @@ run_sweeps('loss')          % packet loss
 run_sweeps('penetration')   % mixed traffic, CAV share 0-100%
 run_sweeps('driver')        % aggressive / nominal / cautious drivers
 run_sweeps('asym')          % unbalanced east-west demand
+run_sweeps('vrec')          % RSU speed advice on / off (C2, C3I, C3)
 ```
 
 To start the sweeps over, delete the `output/sweeps/` folder.
@@ -168,6 +169,17 @@ To start the sweeps over, delete the `output/sweeps/` folder.
 **Files that hold the results** (for the manuscript tables): `output/ablation_stats.csv`,
 `output/ablation_pairs.csv`, `output/estimator_runs.csv`, `output/gpr_holdout_metrics.csv`,
 `output/scenarios/scenario_runs.csv`, `output/sweeps/sweep_stats.csv`, `output/sweeps/sweep_limits.csv`.
+
+**Fresh start** (after a code update, before step 1 or 3). In MATLAB, from `main/`:
+
+```matlab
+delete ../output/ablation_runs.csv
+delete ../output/estimator_runs.csv
+rmdir('../output/scenarios', 's')
+rmdir('../output/sweeps', 's')
+```
+
+A "file not found" warning is fine. Figures in `output/` are overwritten by step 5.
 
 ### Function inputs
 
@@ -307,6 +319,27 @@ Outputs in `output/sweeps/`:
 Outputs in `output/scenarios/scenarioA/` and `scenarioB/`: the usual figure names (`EW_human.png`,
 `EW_idm_rsu.png`, `EW_mpc_rsu_gpr.png`, `fuel_*.png`, ...) plus `scenario_overview.png` (position and speed
 of every vehicle over time for C1, C2 and C3).
+
+Changes after the first full run (commit after 720e22d), all runs must be repeated:
+
+* **Right-turn decision** (`rt_decision.m`): the RSU can only add turn opportunities. The C1 gap rule
+  always applies; a fresh RSU PROCEED also lets a CAV take the gap the RSU made, after an on-board check
+  with no extra margin. Before, an RSU WAIT blocked a turn even when the natural gap was large.
+* **Speed advice** (`Car.EffVd`, `Car.SetSpeedCap`): followed only within 80 m of the stop line and never
+  below half the desired speed. Before, the advice could slow a vehicle to 2 m/s anywhere on the 150 m
+  approach, and on a single lane every vehicle behind it, which blocked new arrivals at the entry.
+* **GPR estimator**: a fourth input, the signal timing (`signal_feature.m`: time left in green, or minus
+  the time until green), an ARD kernel, and training snapshots every 2 s in every phase instead of only at
+  green start, which is how the RSU uses the model. The estimator comparison now also evaluates every 4 s
+  during green. Retrain the model (step 1).
+* **Safety measure** (`compute_turn_safety.m`): the oncoming gap a right turn accepts (time until the next
+  opposing vehicle reaches the junction centre after the turn starts). A gap under 2 s is a conflict.
+  Columns `onc_gap_min_s`, `onc_gap_mean_s`, `n_conflict` replace the separation columns.
+* **New column `fuel_L100km`**: fuel of every vehicle that entered, finished or not, per distance driven,
+  so the fuel comparison does not depend on which vehicles finished.
+* **`sweep_limits.csv`**: completion criterion is now a 20% drop from the base point; the safety criterion
+  is at least one conflict per run.
+* **Scenarios**: fixed (the lower-cased setting did not match, so both scenarios ran on stale traffic).
 
 Behaviour changes that also apply to the main ablation:
 

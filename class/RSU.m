@@ -555,10 +555,23 @@ classdef RSU<handle
             fprintf('[RSU %d] GPR model loaded from %s\n', obj.ID, model_path);
         end
 
+        %% Number of inputs of the loaded GPR model
+        function n = gprNumInputs(obj)
+            n = 3;
+            if isempty(obj.gpr_model), return; end
+            try
+                n = numel(obj.gpr_model.PredictorNames);
+            catch
+                n = 3;
+            end
+        end
+
         %% GPR-based arrival time estimation
         % Replaces the IDM joint-queue simulation with a learned model:
-        %   inputs  : [dist_to_stop_line (m),  current_velocity (m/s)]
-        %   output  : predicted arrival time tau (s)
+        %   inputs  : [dist_to_stop_line (m), velocity (m/s), gap to the
+        %              vehicle ahead (m), signal timing g (s, signal_feature)]
+        %   output  : predicted time until the vehicle reaches its stop line (s)
+        %   obj.t_now must be the current time (set by the public entry points).
         function [ids, taus] = EstimateAllArrivalTimesGPR(obj, dir, trafficLight)
             [sorted_ids, ~] = obj.GetSortedVehiclesByDir(dir);
             n = length(sorted_ids);
@@ -601,9 +614,17 @@ classdef RSU<handle
                 end
                 prev_dist = dist;
 
-                % GPR prediction with 3 inputs: [dist, vel, gap_to_lead]
-                vel      = max(d.V, 0);
-                tau_pred = predict(obj.gpr_model, [dist, vel, gap]);
+                % GPR prediction: [dist, vel, gap_to_lead, signal timing]
+                % (a model trained before the signal input was added has
+                % 3 inputs and is still accepted)
+                vel = max(d.V, 0);
+                if obj.gprNumInputs() >= 4
+                    if any(dir == 'EW'), ax = 'EW'; else, ax = 'NS'; end
+                    xq = [dist, vel, gap, signal_feature(obj.t_now, ax)];
+                else
+                    xq = [dist, vel, gap];
+                end
+                tau_pred = predict(obj.gpr_model, xq);
                 tau_pred = max(tau_pred, obj.dt_sim);
 
                 ids2(end+1)  = sorted_ids(i);

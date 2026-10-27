@@ -1,6 +1,7 @@
 %% GPR Arrival-Time Model Training
 % Runs N_TRIALS independent human-driving simulations with fresh random
-% traffic schedules, accumulates (dist, vel) -> tau training samples,
+% traffic schedules, accumulates [dist, vel, gap, signal timing] -> tau
+% samples (snapshots every 2 s in every phase),
 % then trains and saves the GPR model to simplot/gpr_arrival_model.mat.
 %
 % Deliberately does NOT touch traffic_schedule.mat so the other six
@@ -23,7 +24,7 @@ PROJECT_ROOT = ROOT_;
 %% ===== SETTINGS =====
 N_TRIALS = 20;      % number of independent simulation runs (seeds 1..N_TRIALS)
 N_TEST   = 4;       % last N_TEST seeds are held out: never used for fitting, only for the test metrics
-KKmax    = 3000;    % timesteps per trial (600 x 0.5s = 5 min)
+KKmax    = 3000;    % timesteps per trial (3000 x 0.5 s = 25 min)
 dt_val   = 0.5;    % simulation timestep [s]
 
 % Traffic light
@@ -45,8 +46,10 @@ out_eps      = 0.5;
 appear       = 3;
 
 % Training data accumulators
-X_all = zeros(0, 3);     % [dist_to_stop_line, velocity, gap_to_lead]
-y_all = zeros(0, 1);     % tau (s from green start to stop-line crossing)
+X_all = zeros(0, 4);     % [dist_to_stop_line, velocity, gap_to_lead, signal timing g]
+y_all = zeros(0, 1);     % tau (s from the snapshot to the stop-line crossing)
+SNAP_EVERY = 2.0;        % [s] snapshot interval (all signal phases)
+MAX_TRAIN  = 20000;      % [samples] cap for the final sparse fit (memory)
 trial_all = zeros(0, 1); % seed of the trial each sample came from
 
 fprintf('=== GPR Training: %d trials x %d timesteps ===\n', N_TRIALS, KKmax);
@@ -170,7 +173,7 @@ for trial = 1:N_TRIALS
     end % KK loop
 
     % --- Extract training samples from this trial ---
-    [Xt, yt] = extractGPRSamples(CarLog, LightLog, stop_line);
+    [Xt, yt] = extractGPRSamples(CarLog, stop_line, SNAP_EVERY);
     X_all = [X_all; Xt];
     y_all = [y_all; yt];
     trial_all = [trial_all; trial*ones(size(yt))];
@@ -202,17 +205,25 @@ if size(X_train,1) >= MIN_SAMPLES
 
     fprintf('Optimising GPR hyperparameters (this may take 1-3 min)...\n');
     gpr_opt = fitrgp(Xo, yo, ...
-        'KernelFunction',    'squaredexponential', ...
+        'KernelFunction',    'ardsquaredexponential', ...
         'BasisFunction',     'linear', ...
         'Standardize',       true, ...
         'OptimizeHyperparameters', 'auto', ...
         'HyperparameterOptimizationOptions', struct('ShowPlots',false,'Verbose',0));
 
-    % Refit on FULL dataset using the optimised hyperparameters
+    % Cap the training set for the sparse refit (random, reproducible)
+    if size(X_train,1) > MAX_TRAIN
+        rs = RandStream('mt19937ar', 'Seed', 12345);
+        keep = randperm(rs, size(X_train,1), MAX_TRAIN);
+        X_train = X_train(keep,:);  y_train = y_train(keep);
+        fprintf('Training set capped at %d random samples.\n', MAX_TRAIN);
+    end
+
+    % Refit on the training set using the optimised hyperparameters
     kp = gpr_opt.KernelInformation.KernelParameters;
     fprintf('Refitting on full %d samples with fixed hyperparameters...\n', size(X_train,1));
     gpr_model = fitrgp(X_train, y_train, ...
-        'KernelFunction',       'squaredexponential', ...
+        'KernelFunction',       'ardsquaredexponential', ...
         'KernelParameters',     kp, ...
         'BasisFunction',        'linear', ...
         'Standardize',          true, ...
@@ -245,7 +256,7 @@ if size(X_train,1) >= MIN_SAMPLES
         mean(residuals), 100*mean(abs(residuals) < 2), 100*mean(abs(residuals) < 5));
     fclose(fid);
     kp_final = gpr_model.KernelInformation.KernelParameters;
-    fprintf('Final kernel parameters (length scale, signal std): %s;  noise sigma: %.4f\n', ...
+    fprintf('Final kernel parameters (length scale per input, signal std): %s;  noise sigma: %.4f\n', ...
         mat2str(kp_final', 4), gpr_model.Sigma);
 
     %% --- Diagnostic plots ---
@@ -316,9 +327,11 @@ if size(X_train,1) >= MIN_SAMPLES
     [D, V]  = meshgrid(d_grid, v_grid);
 
     gap_rep = 8.0;
+    g_rep   = 30.0;          % signal timing: 30 s of green left
     G       = ones(size(D)) * gap_rep;
+    Gs      = ones(size(D)) * g_rep;
 
-    Z = reshape(predict(gpr_model, [D(:), V(:), G(:)]), size(D));
+    Z = reshape(predict(gpr_model, [D(:), V(:), G(:), Gs(:)]), size(D));
 
     contourf(D, V, Z, 20, 'LineColor','none');
     colormap(ax3, 'jet');
@@ -327,9 +340,9 @@ if size(X_train,1) >= MIN_SAMPLES
     cb2.FontSize = font_axis;
 
     xlabel('Distance to stop line [m]', 'FontSize',font_label);
-    ylabel('Velocity at green start [m/s]', 'FontSize',font_label);
+    ylabel('Velocity [m/s]', 'FontSize',font_label);
 
-    title(sprintf('GPR Prediction (gap=%.0fm)', gap_rep), ...
+    title(sprintf('GPR Prediction (gap=%.0fm, %.0fs green left)', gap_rep, g_rep), ...
         'FontSize',font_title,'FontWeight','bold');
 
     grid on;
@@ -439,123 +452,78 @@ switch dir
 end
 end
 
-function [X, y] = extractGPRSamples(CarLog, LightLog, stop_line)
-% Extract GPR training samples using GREEN-START snapshots.
+function [X, y] = extractGPRSamples(CarLog, stop_line, snap_every)
+% Training samples from snapshots every snap_every seconds, in every signal
+% phase. This matches how the RSU uses the model: it predicts whenever it
+% re-optimises during green, not only at the start of green.
 %
-% For each green phase start, snapshot every vehicle's (dist, vel) at that
-% exact moment. tau = time from green start until the vehicle crosses.
-%
-% This matches exactly how the RSU uses the model: it fires at green start
-% and predicts arrival times from vehicles' current states.
-% Stopped vehicles (vel~0, queued at red) are naturally included.
+% Inputs per sample:  [dist to stop line, velocity, gap to the vehicle
+%                      ahead, signal timing g (signal_feature)]
+% Target:             time from the snapshot until the vehicle crosses its
+%                     stop line (straight vehicles only, at most 120 s)
+% The vehicle ahead can be any vehicle in the lane (also a turner), as in
+% RSU.EstimateAllArrivalTimesGPR.
 
-X = zeros(0,3);  y = zeros(0,1);   % inputs: [dist, vel, gap_to_lead]
-if isempty(CarLog) || isempty(LightLog), return; end
+X = zeros(0,4);  y = zeros(0,1);
+if isempty(CarLog), return; end
 
-n_log = length(LightLog);
+T   = [CarLog.Time];
+ID  = [CarLog.ID];
+Xp  = [CarLog.X];
+Yp  = [CarLog.Y];
+V   = [CarLog.V];
+TR  = [CarLog.TurnRight];
+TL  = [CarLog.TurnLeft];
+DIR = [CarLog.Dir];          % one char per entry
 
-% Find green-start timesteps for EW and NS axes
-green_starts_EW = [];
-green_starts_NS = [];
-for k = 2:n_log
-    if strcmp(LightLog(k).EW,'green') && ~strcmp(LightLog(k-1).EW,'green')
-        green_starts_EW(end+1) = LightLog(k).Time;
-    end
-    if strcmp(LightLog(k).NS,'green') && ~strcmp(LightLog(k-1).NS,'green')
-        green_starts_NS(end+1) = LightLog(k).Time;
-    end
+% distance to own stop line for every log entry
+D = nan(size(T));
+mE = DIR == 'E'; D(mE) = -stop_line - Xp(mE);
+mW = DIR == 'W'; D(mW) =  Xp(mW) - stop_line;
+mN = DIR == 'N'; D(mN) = -stop_line - Yp(mN);
+mS = DIR == 'S'; D(mS) =  Yp(mS) - stop_line;
+
+% stop-line crossing time of every vehicle (first entry with D <= 0)
+ids = unique(ID);
+t_cross = containers.Map('KeyType','double','ValueType','double');
+for k = 1:numel(ids)
+    m = find(ID == ids(k));
+    [~, o] = sort(T(m)); m = m(o);
+    j = find(D(m) <= 0, 1);
+    if ~isempty(j), t_cross(ids(k)) = T(m(j)); end
 end
 
-all_times = [CarLog.Time];
-all_ids   = [CarLog.ID];
-
-% Combine EW and NS green starts into one list
-axes_list  = [repmat({'EW'}, 1, length(green_starts_EW)), ...
-    repmat({'NS'}, 1, length(green_starts_NS))];
-times_list = [green_starts_EW, green_starts_NS];
-
-for gi = 1:length(times_list)
-    green_t = times_list(gi);
-    axis    = axes_list{gi};
-
-    % Snapshot: all vehicles logged at this green-start timestep
-    snap = CarLog(all_times == green_t);
-
-    for ai = 1:length(snap)
-        vdir = snap(ai).Dir;
-
-        % Skip turning vehicles — straight-going only
-        if snap(ai).TurnRight || snap(ai).TurnLeft, continue; end
-
-        % Direction must match this axis
-        if strcmp(axis,'EW') && ~(strcmp(vdir,'E') || strcmp(vdir,'W')), continue; end
-        if strcmp(axis,'NS') && ~(strcmp(vdir,'N') || strcmp(vdir,'S')), continue; end
-
-        % Distance to stop line at green start
-        switch vdir
-            case 'E', dk = -stop_line - snap(ai).X;
-            case 'W', dk =  snap(ai).X - stop_line;
-            case 'N', dk = -stop_line - snap(ai).Y;
-            case 'S', dk =  snap(ai).Y - stop_line;
-            otherwise, continue;
-        end
-        if dk <= 0 || dk > 200, continue; end  % already past stop or out of range
-        velk = snap(ai).V;                     % velocity at green start (may be 0)
-        vid  = snap(ai).ID;                    % must be defined before gap loop
-
-        % Gap to nearest lead vehicle (same direction, closer to stop line)
-        % If no lead: gap = dk (free-flow condition)
-        min_lead_dist = Inf;
-        for aj = 1:length(snap)
-            if snap(aj).ID == vid, continue; end
-            if ~strcmp(snap(aj).Dir, vdir), continue; end
-            if snap(aj).TurnRight || snap(aj).TurnLeft, continue; end
-            switch vdir
-                case 'E', dk_lead = -stop_line - snap(aj).X;
-                case 'W', dk_lead =  snap(aj).X - stop_line;
-                case 'N', dk_lead = -stop_line - snap(aj).Y;
-                case 'S', dk_lead =  snap(aj).Y - stop_line;
-                otherwise, continue;
+t_snaps = unique(T(abs(mod(T, snap_every)) < 1e-9));
+Xc = cell(numel(t_snaps), 1);  yc = cell(numel(t_snaps), 1);
+for si = 1:numel(t_snaps)
+    ts = t_snaps(si);
+    m  = find(T == ts);
+    Xs = zeros(0,4); ys = zeros(0,1);
+    for dch = 'NSEW'
+        md = m(DIR(m) == dch & D(m) > 0 & D(m) <= 200);
+        if isempty(md), continue; end
+        [~, o] = sort(D(md)); md = md(o);        % closest to the stop line first
+        if any(dch == 'EW'), ax = 'EW'; else, ax = 'NS'; end
+        g = signal_feature(ts, ax);
+        for q = 1:numel(md)
+            e = md(q);
+            if TR(e) || TL(e), continue; end      % targets: straight vehicles only
+            if ~isKey(t_cross, ID(e)), continue; end
+            tau = t_cross(ID(e)) - ts;
+            if tau <= 0 || tau > 120, continue; end
+            if q == 1
+                gap = D(e);                       % no vehicle ahead: free road
+            else
+                gap = max(D(e) - D(md(q-1)) - 4.0, 0);   % 4 m vehicle length
             end
-            % Lead must be between vehicle and stop line (smaller dist, still before stop)
-            if dk_lead > 0 && dk_lead < dk && dk_lead < min_lead_dist
-                min_lead_dist = dk_lead;
-            end
+            Xs(end+1,:) = [D(e), max(V(e),0), gap, g]; %#ok<AGROW>
+            ys(end+1,1) = tau;                         %#ok<AGROW>
         end
-        if isinf(min_lead_dist)
-            gap_k = dk;              % no lead vehicle: free-flow
-        else
-            gap_k = max(dk - min_lead_dist - 4.0, 0);  % 4m = vehicle length
-        end
-
-        % Find this vehicle's future log entries (after green_t)
-        vid_mask = (all_ids == vid) & (all_times > green_t);
-        vid_log  = CarLog(vid_mask);
-        if isempty(vid_log), continue; end
-
-        % Find first timestep where vehicle crossed the stop line
-        t_cross = [];
-        for si = 1:length(vid_log)
-            switch vdir
-                case 'E', d_si = -stop_line - vid_log(si).X;
-                case 'W', d_si =  vid_log(si).X - stop_line;
-                case 'N', d_si = -stop_line - vid_log(si).Y;
-                case 'S', d_si =  vid_log(si).Y - stop_line;
-            end
-            if d_si <= 0
-                t_cross = vid_log(si).Time;
-                break;
-            end
-        end
-
-        if isempty(t_cross), continue; end
-        tauk = t_cross - green_t;
-        if tauk <= 0 || tauk > 120, continue; end
-
-        X(end+1,:) = [dk, velk, gap_k];
-        y          = [y; tauk];
     end
+    Xc{si} = Xs;  yc{si} = ys;
 end
+X = vertcat(Xc{:});  y = vertcat(yc{:});
+if isempty(X), X = zeros(0,4); y = zeros(0,1); end
 end
 
 function ok = canSpawnY(list, y0, gap)

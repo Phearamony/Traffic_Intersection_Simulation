@@ -5,14 +5,15 @@ function plot_ablation_summary(csv_path, out_dir)
 %   plot_ablation_summary(csv_path, out_dir)
 %
 %   ablation_summary.png
-%       One panel per metric (fuel per right-turner, fuel per straight
-%       vehicle, gap wait of right-turners, right-turn completion).
+%       One panel per metric (fuel per right-turner, fuel of all vehicles
+%       per distance, gap wait, right-turn completion, vehicles that
+%       finished, mean delay).
 %       Each configuration: one light dot per seed, and the mean with its
 %       95% confidence interval (t distribution).
 %
 %   ablation_paired.png
 %       Paired differences per seed (B minus A, same traffic) for each
-%       comparison of Table IV, for right-turner fuel and gap wait.
+%       comparison of Table IV, for right-turner fuel, gap wait and throughput.
 %       Dot per seed, mean with 95% CI, dashed line at zero. A CI that
 %       does not cross zero is a consistent effect across seeds.
 %
@@ -39,13 +40,16 @@ col_prop = [0.80 0.25 0.10];    % proposed configuration C3
 fs = 11;
 
 % ---------------- Figure 1: per-configuration summary ----------------
-mets   = {'fuel_rt_mL', 'fuel_str_mL', 'gap_rt_s', 'rt_completion'};
-labels = {'Fuel per right-turner [mL]', 'Fuel per straight vehicle [mL]', ...
-          'Gap wait of right-turners [s]', 'Right-turn completion [%]'};
-scale  = [1 1 1 100];
+mets   = {'fuel_rt_mL', 'fuel_L100km', 'gap_rt_s', 'rt_completion', 'n_exited', 'delay_all_s'};
+labels = {'Fuel per right-turner [mL]', 'Fuel, all vehicles [L/100 km]', ...
+          'Gap wait of right-turners [s]', 'Right-turn completion [%]', ...
+          'Vehicles that finished [veh]', 'Mean delay [s]'};
+scale  = [1 1 1 100 1 1];
+mets_ok = ismember(mets, T.Properties.VariableNames);
+mets = mets(mets_ok); labels = labels(mets_ok); scale = scale(mets_ok);
 
-f1 = figure('Color', 'w', 'Position', [100 100 1100 720]);
-tl = tiledlayout(f1, 2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+f1 = figure('Color', 'w', 'Position', [100 100 1500 720]);
+tl = tiledlayout(f1, 2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
 for m = 1:numel(mets)
     ax = nexttile(tl); hold(ax, 'on'); box(ax, 'on'); grid(ax, 'on');
     for i = 1:numel(cfg)
@@ -76,11 +80,11 @@ cmp = { 'C2G_idm_rsu_gpr', 'C3_mpc_rsu_gpr', 'Controller | GPR  (C2G\rightarrowC
         'C1_human',        'C2_idm_rsu',     'Coordination | ref.  (C1\rightarrowC2)';
         'C1_human',        'C3_mpc_rsu_gpr', 'Coordination | proposed  (C1\rightarrowC3)';
         'V2V_IDM',         'V2V_MPC',        'Controller | no RSU  (V2V-IDM\rightarrowV2V-MPC)' };
-pm  = {'fuel_rt_mL', 'gap_rt_s'};
-pl  = {'\Delta fuel per right-turner [mL]', '\Delta gap wait [s]'};
+pm  = {'fuel_rt_mL', 'gap_rt_s', 'n_exited'};
+pl  = {'\Delta fuel per right-turner [mL]', '\Delta gap wait [s]', '\Delta vehicles finished [veh]'};
 
-f2 = figure('Color', 'w', 'Position', [100 100 1100 520]);
-tl2 = tiledlayout(f2, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+f2 = figure('Color', 'w', 'Position', [100 100 1500 520]);
+tl2 = tiledlayout(f2, 1, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
 nC = size(cmp, 1);
 for m = 1:numel(pm)
     ax = nexttile(tl2); hold(ax, 'on'); box(ax, 'on'); grid(ax, 'on');

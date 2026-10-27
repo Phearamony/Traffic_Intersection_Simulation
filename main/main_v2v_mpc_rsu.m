@@ -964,8 +964,8 @@ for KK = 1:KKmax
                 car.Ac = 0;
 
                 % ========== RSU-BASED DECISION ==========
-                % CAV with a fresh RSU advisory follows it; a human driver, or a CAV
-                % whose advisory was lost or is stale, decides with the C1 gap rule.
+                % The C1 gap rule always applies; a fresh RSU PROCEED lets a CAV also
+                % use the gap the RSU made for it (see rt_decision.m).
                 canTurn = rt_decision(car, CarE, 'E', TrafficLight.EW, turn_release);
                 % =========================================
 
@@ -1025,8 +1025,8 @@ for KK = 1:KKmax
                 car.Ac = 0;
 
                 % ========== RSU-BASED DECISION ==========
-                % CAV with a fresh RSU advisory follows it; a human driver, or a CAV
-                % whose advisory was lost or is stale, decides with the C1 gap rule.
+                % The C1 gap rule always applies; a fresh RSU PROCEED lets a CAV also
+                % use the gap the RSU made for it (see rt_decision.m).
                 canTurn = rt_decision(car, CarW, 'W', TrafficLight.EW, turn_release);
                 % =========================================
 
@@ -1085,8 +1085,8 @@ for KK = 1:KKmax
                 car.Ac = 0;
 
                 % ========== RSU-BASED DECISION ==========
-                % CAV with a fresh RSU advisory follows it; a human driver, or a CAV
-                % whose advisory was lost or is stale, decides with the C1 gap rule.
+                % The C1 gap rule always applies; a fresh RSU PROCEED lets a CAV also
+                % use the gap the RSU made for it (see rt_decision.m).
                 canTurn = rt_decision(car, CarN, 'N', TrafficLight.NS, turn_release);
                 % =========================================
 
@@ -1145,8 +1145,8 @@ for KK = 1:KKmax
                 car.Ac = 0;
 
                 % ========== RSU-BASED DECISION ==========
-                % CAV with a fresh RSU advisory follows it; a human driver, or a CAV
-                % whose advisory was lost or is stale, decides with the C1 gap rule.
+                % The C1 gap rule always applies; a fresh RSU PROCEED lets a CAV also
+                % use the gap the RSU made for it (see rt_decision.m).
                 canTurn = rt_decision(car, CarS, 'S', TrafficLight.NS, turn_release);
                 % =========================================
 

@@ -1,21 +1,28 @@
 function R = compute_turn_safety(CarLog)
-%COMPUTE_TURN_SAFETY  Time separation between right turns and opposing traffic.
+%COMPUTE_TURN_SAFETY  Oncoming gap accepted by each right turn.
 %
 %   For every right turn in CarLog (a vehicle with TurnRight = 1 whose Dir
-%   changes between two consecutive log entries), the turn instant t_turn
-%   is the time of the first entry with the new direction. For every
+%   changes between two consecutive log entries), the turn starts at
+%   t_turn, the time of the first entry with the new direction. For every
 %   opposing straight vehicle, t_pass is the time it passes the
 %   intersection centre (linear interpolation between log samples).
 %
-%   Separation of one turn = min over opposing vehicles of |t_pass - t_turn|.
-%   This is a post-encroachment-time style measure at the conflict area:
-%   small values mean the turner and an opposing vehicle used the conflict
-%   area close together in time.
+%   Oncoming gap of one turn = t_pass - t_turn of the FIRST opposing
+%   vehicle that passes after the turn starts (capped at GAP_CAP s when
+%   none comes). The turn itself takes about 2 s from the waiting point
+%   (same geometry as local_gap_ok), so a gap under 2 s means the oncoming
+%   vehicle reaches the conflict area while the turner is still in it: a
+%   conflict. Vehicles that passed just BEFORE the turn are not counted:
+%   in this model the turner starts from the waiting point after they have
+%   left the conflict point, which is ordinary behaviour, not a conflict.
 %
 %   R.n_turns    number of right turns found
-%   R.sep_min    smallest separation over all turns [s]   (NaN if none)
-%   R.sep_mean   mean separation over turns             [s]
-%   R.n_below2   number of turns with separation < 2 s
+%   R.sep_min    smallest oncoming gap over all turns [s]   (NaN if no turn)
+%   R.sep_mean   mean oncoming gap over turns          [s]
+%   R.n_below2   number of turns with an oncoming gap < 2 s (conflicts)
+%   (field names kept from the earlier separation measure)
+
+GAP_CAP = 30;   % [s]
 
 R = struct('n_turns', 0, 'sep_min', NaN, 'sep_mean', NaN, 'n_below2', 0);
 if isempty(CarLog), return; end
@@ -51,7 +58,7 @@ for k = 1:numel(ids)
     pass.(d)(end+1) = tp;
 end
 
-% ---- right-turn instants and separations ----
+% ---- right-turn instants and oncoming gaps ----
 opp = struct('E', 'W', 'W', 'E', 'N', 'S', 'S', 'N');
 sep = [];
 for k = 1:numel(ids)
@@ -62,10 +69,15 @@ for k = 1:numel(ids)
         if ~strcmp(DIR{m(j)}, DIR{m(j-1)})
             d0 = DIR{m(j-1)};
             if ~isfield(opp, d0), break; end
+            t_turn = T(m(j));
             tp = pass.(opp.(d0));
-            if ~isempty(tp)
-                sep(end+1) = min(abs(tp - T(m(j)))); %#ok<AGROW>
+            tp = tp(tp >= t_turn);
+            if isempty(tp)
+                g = GAP_CAP;
+            else
+                g = min(min(tp) - t_turn, GAP_CAP);
             end
+            sep(end+1) = g; %#ok<AGROW>
             break;
         end
     end

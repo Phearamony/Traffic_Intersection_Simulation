@@ -1,21 +1,34 @@
 function canTurn = rt_decision(car, opp, oppDir, light, turn_release)
 %RT_DECISION  Right-turn decision at the waiting point (RSU configurations).
-%   Two-tier rule:
-%   1. A CAV with a fresh RSU advisory (+1 proceed / -1 wait) follows it.
-%      It trusts the RSU: it does not re-check the gap itself, so in mixed
-%      traffic a human car the RSU cannot see is a real risk, which the
-%      turn-separation metric measures.
-%   2. Otherwise (human driver in mixed traffic, advisory lost or older than
-%      Car.X2V_TIMEOUT, or the RSU has no plan for it) the driver decides
-%      alone with the C1 gap-acceptance rule (local_gap_ok), and also clears
-%      the junction once its signal is no longer green, as in C1.
+%
+%   The RSU can only add turn opportunities, never take one away:
+%
+%   1. A CAV whose fresh RSU advisory says PROCEED (+1) turns, after a short
+%      on-board check that no opposing vehicle is about to reach the
+%      conflict point during the turn (local_gap_ok with no extra margin).
+%      The RSU created this gap by holding opposing CAVs back, so the
+%      vehicle does not need the large margin of the human rule.
+%   2. In every other case (advisory WAIT, no advisory, advisory lost or
+%      older than Car.X2V_TIMEOUT, human driver in mixed traffic) the
+%      vehicle uses the C1 gap-acceptance rule (local_gap_ok with the human
+%      margin): a natural gap that is large enough is always taken, and the
+%      vehicle clears the junction once its signal is no longer green.
+%
+%   So a turner in an RSU configuration has every opportunity a C1 driver
+%   has, plus the gaps the RSU makes for it.
+
 x2v = [];
 if car.IsCAV
     x2v = car.GetLastX2V();
 end
-if ~isempty(x2v) && isfield(x2v, 'turn_signal') && ~isempty(x2v.turn_signal) && x2v.turn_signal ~= 0
-    canTurn = (x2v.turn_signal == 1);
+if ~strcmp(light, 'green')
+    canTurn = true;          % end of green: clear the junction, as in C1
     return;
 end
-canTurn = ~strcmp(light, 'green') || local_gap_ok(car, opp, oppDir, turn_release);
+if ~isempty(x2v) && isfield(x2v, 'turn_signal') && ~isempty(x2v.turn_signal) ...
+        && x2v.turn_signal == 1
+    canTurn = local_gap_ok(car, opp, oppDir, turn_release, 0);
+    if canTurn, return; end
+end
+canTurn = local_gap_ok(car, opp, oppDir, turn_release);
 end

@@ -40,9 +40,13 @@ function collect_ablation_metrics(FuelLog, label, seed, CarLog, extra)
 %     n_rt_intent, n_rt_done, rt_completion   right-turners entered / completed
 %     n_exited, n_unfinished                  throughput and vehicles left inside
 %     fuel_rt_mL, fuel_str_mL                 mean fuel per completed trip [mL]
+%     fuel_L100km                             fuel of ALL vehicles (also unfinished) per
+%                                             distance driven [L/100 km], from CarLog; free
+%                                             of the complete-trip selection
 %     gap_rt_s, red_rt_s                      mean idle time of completed right-turners [s]
 %     red_str_s                               mean red idle time of straight vehicles [s]
-%     sep_min_s, sep_mean_s, n_sep_below2     right-turn separation (compute_turn_safety)
+%     onc_gap_min_s, onc_gap_mean_s           oncoming gap accepted by right turns [s]
+%     n_conflict                              turns with an oncoming gap < 2 s (compute_turn_safety)
 %     delay_rt_s, delay_str_s, delay_all_s    mean trip time minus free-flow time
 %                                             (320 m at the vehicle's desired speed), complete trips
 %     n_blocked                               arrivals blocked at the entry (spillback)
@@ -116,9 +120,27 @@ else
     Rs = struct('sep_min', NaN, 'sep_mean', NaN, 'n_below2', NaN);
 end
 
+% network fuel per distance: every vehicle that entered, finished or not
+fuel_L100km = NaN;
+if ~isempty(CarLog)
+    ID = [CarLog.ID]; T = [CarLog.Time]; X = [CarLog.X]; Y = [CarLog.Y];
+    dist_m = 0;
+    ids = unique(ID);
+    for k = 1:numel(ids)
+        m = find(ID == ids(k));
+        [~, o] = sort(T(m)); m = m(o);
+        st = hypot(diff(X(m)), diff(Y(m)));
+        dist_m = dist_m + sum(st(st < 20));   % ignore the jump of a turn
+    end
+    fuel_all = [FuelLog.fuel_total];
+    if dist_m > 0
+        fuel_L100km = sum(fuel_all(isfinite(fuel_all))) * 100 / dist_m;
+    end
+end
+
 header = ['study,point,seed,label,n_rt_intent,n_rt_done,rt_completion,n_exited,n_unfinished,', ...
-          'fuel_rt_mL,fuel_str_mL,gap_rt_s,red_rt_s,red_str_s,', ...
-          'sep_min_s,sep_mean_s,n_sep_below2,delay_rt_s,delay_str_s,delay_all_s,', ...
+          'fuel_rt_mL,fuel_str_mL,fuel_L100km,gap_rt_s,red_rt_s,red_str_s,', ...
+          'onc_gap_min_s,onc_gap_mean_s,n_conflict,delay_rt_s,delay_str_s,delay_all_s,', ...
           'n_blocked,qp_solves,qp_fail_pct'];
 
 csv_path = S.csv;
@@ -139,14 +161,14 @@ if fid == -1
     error('collect_ablation_metrics: cannot open %s', csv_path);
 end
 if write_header, fprintf(fid, '%s\n', header); end
-fprintf(fid, '%s,%s,%g,%s,%d,%d,%.4f,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%g,%.3f,%.3f,%.3f,%g,%g,%.3f\n', ...
+fprintf(fid, '%s,%s,%g,%s,%d,%d,%.4f,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%g,%.3f,%.3f,%.3f,%g,%g,%.3f\n', ...
     S.study, S.point, seed, label, n_rt_intent, n_rt_done, completion, n_exited, n_unfinished, ...
-    fuel_rt, fuel_str, gap_rt, red_rt, red_str, Rs.sep_min, Rs.sep_mean, Rs.n_below2, ...
+    fuel_rt, fuel_str, fuel_L100km, gap_rt, red_rt, red_str, Rs.sep_min, Rs.sep_mean, Rs.n_below2, ...
     delay_rt, delay_str, delay_all, n_blocked, qp_solves, qp_fail);
 fclose(fid);
 
 fprintf(['[metrics] %s %s seed %g %s: RT %d/%d, fuel RT %.1f mL, Str %.1f mL, ', ...
-         'gap %.1f s, delay %.1f s, blocked %g, min sep %.1f s\n'], ...
+         'gap %.1f s, delay %.1f s, blocked %g, min oncoming gap %.1f s\n'], ...
     S.study, S.point, seed, label, n_rt_done, n_rt_intent, fuel_rt, fuel_str, gap_rt, ...
     delay_all, n_blocked, Rs.sep_min);
 end
