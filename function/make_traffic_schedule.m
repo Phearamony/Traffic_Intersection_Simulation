@@ -64,11 +64,11 @@ end
 
 % ---------------- fixed scenarios ----------------
 if startsWith(S.sched, 'scenario')
-    switch S.sched
-        case 'scenarioA'
+    switch lower(S.sched)          % abl_settings lower-cases ABL_SCHED
+        case 'scenarioa'
             W_rt = 44;          W_st = [46.5 49];
             E_st = [46 48.5 51 53.5 66 68.5];  E_rt = [];
-        case 'scenarioB'
+        case 'scenariob'
             W_rt = [44 46.5];   W_st = 49;
             E_st = [46 48.5 51 53.5 56 70 72.5];  E_rt = 58;
         otherwise
