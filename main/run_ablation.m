@@ -7,6 +7,7 @@ function run_ablation(seeds, kkmax, with_estimator)
 %
 %   For every seed:
 %     1. main_human_driving.m      generates traffic_schedule.mat for this seed
+%                                  (schedule only, ABL_SCHED_ONLY = 1)
 %     2. every configuration runs on that same schedule
 %   Each configuration appends one row to output/ablation_runs.csv.
 %   At the end summarize_ablation() writes ablation_stats.csv and
@@ -59,6 +60,9 @@ for s = seeds
     for k = 1:numel(scripts)
         fprintf('\n##### seed %d  |  %s #####\n', s, scripts{k});
         t1 = tic;
+        % main_human_driving only writes the schedule here; C1 itself is
+        % main_human_driving_plot, so its full simulation would be wasted time
+        setenv('ABL_SCHED_ONLY', num2str(strcmp(scripts{k}, 'main_human_driving')));
         try
             runIsolated(fullfile(root, 'main', [scripts{k} '.m']));
         catch err
@@ -74,6 +78,7 @@ for s = seeds
         fprintf('##### done in %.0f s #####\n', toc(t1));
     end
 end
+setenv('ABL_SCHED_ONLY', '');
 fprintf('\nAll runs finished in %.1f min.\n', toc(t_all) / 60);
 
 summarize_ablation(fullfile(root, 'output', 'ablation_runs.csv'));
