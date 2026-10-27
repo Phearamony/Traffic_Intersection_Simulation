@@ -137,6 +137,7 @@ cd main
 
 | Step | Command | What it does | Output |
 |---|---|---|---|
+| all | `run_all` | Fresh start + steps 1 and 4 to 8 in one call, unattended. Log in `output/run_all_log.txt` | everything below |
 | 0 (optional) | `watch_main('C3')` | Live animation of one configuration, nothing saved | none |
 | 1 | `main_human_driving_gpr_train` | Train the GPR model once (seeds 1-16 train, 17-20 test) | `simplot/gpr_arrival_model.mat`, `output/gpr_holdout_metrics.csv`, `output/gpr_model_diagnostics.png` |
 | 2 | see **Fresh start** below | Remove old results (needed after every code update) | |
