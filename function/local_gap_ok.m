@@ -1,4 +1,4 @@
-function ok = local_gap_ok(car, opp, oppDir, turn_release, bigGap)
+function ok = local_gap_ok(car, opp, oppDir, turn_release, bigGap, accelAware)
 %LOCAL_GAP_OK  Driver's own gap acceptance for a right-turner at its waiting point.
 %   Same rule as the uncoordinated baseline C1 (main_human_driving_plot.m):
 %   the turn is accepted when every opposing vehicle that has not yet
@@ -12,11 +12,18 @@ function ok = local_gap_ok(car, opp, oppDir, turn_release, bigGap)
 %   bigGap  extra margin [s] on top of turn time + reaction time
 %           (default 4 s, the C1 human rule; 0 = on-board check of a CAV
 %           that the RSU told to proceed)
+%   accelAware  true = arrival time of each opposing vehicle assumes it
+%           accelerates (1.5 m/s^2, the IDM maximum) up to its desired
+%           speed, the earliest it can arrive; false (default) = constant
+%           current speed, as a human driver judges it. The on-board check
+%           of a CAV uses true: a vehicle that the RSU held back speeds up
+%           again once it is past its stop line.
 
 minGapDist = 6.0;   % [m]
 rt_react   = 0.7;   % [s]
 rt_bigGap  = 4.0;   % [s]
 if nargin >= 5 && ~isempty(bigGap), rt_bigGap = bigGap; end
+if nargin < 6 || isempty(accelAware), accelAware = false; end
 
 % turn time from the waiting point (same geometry as estimateTurnTime in C1)
 turn_wait = 5;
@@ -38,7 +45,11 @@ conf = notPassed & ~[opp.TurnRight];
 idx = find(conf);
 if isempty(idx), return; end
 for j = idx
-    t_arr = dist(j) / max(opp(j).V, 0.1);
+    if accelAware
+        t_arr = earliestArrival(dist(j), max(opp(j).V, 0), max(opp(j).Vd, 0.1), 1.5);
+    else
+        t_arr = dist(j) / max(opp(j).V, 0.1);
+    end
     if numel(idx) == 1
         if dist(j) < minGapDist || t_arr < t_turn + rt_react + rt_bigGap
             ok = false; return;
@@ -48,5 +59,18 @@ for j = idx
             ok = false; return;
         end
     end
+end
+end
+
+function t = earliestArrival(d, v0, vmax, a)
+% time to cover d [m] starting at v0, accelerating at a up to vmax
+if d <= 0, t = 0; return; end
+v0 = min(v0, vmax);
+t_acc = (vmax - v0) / a;
+d_acc = v0 * t_acc + 0.5 * a * t_acc^2;
+if d <= d_acc
+    t = (-v0 + sqrt(v0^2 + 2 * a * d)) / a;
+else
+    t = t_acc + (d - d_acc) / vmax;
 end
 end

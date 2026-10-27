@@ -5,7 +5,8 @@ function canTurn = rt_decision(car, opp, oppDir, light, turn_release)
 %
 %   1. A CAV whose fresh RSU advisory says PROCEED (+1) turns, after a short
 %      on-board check that no opposing vehicle is about to reach the
-%      conflict point during the turn (local_gap_ok with no extra margin).
+%      conflict point during the turn (local_gap_ok with no extra margin,
+%      assuming each opposing vehicle accelerates: earliest arrival).
 %      The RSU created this gap by holding opposing CAVs back, so the
 %      vehicle does not need the large margin of the human rule.
 %   2. In every other case (advisory WAIT, no advisory, advisory lost or
@@ -27,7 +28,7 @@ if ~strcmp(light, 'green')
 end
 if ~isempty(x2v) && isfield(x2v, 'turn_signal') && ~isempty(x2v.turn_signal) ...
         && x2v.turn_signal == 1
-    canTurn = local_gap_ok(car, opp, oppDir, turn_release, 0);
+    canTurn = local_gap_ok(car, opp, oppDir, turn_release, 0, true);
     if canTurn, return; end
 end
 canTurn = local_gap_ok(car, opp, oppDir, turn_release);

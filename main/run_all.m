@@ -1,8 +1,9 @@
-function run_all(fresh)
+function run_all(fresh, train)
 %RUN_ALL  Every experiment of the journal in one call (unattended).
 %
 %   run_all          % fresh start: deletes old results first
 %   run_all(false)   % keep existing results (sweeps resume where they stopped)
+%   run_all(true, false)   % fresh start but keep the trained GPR model
 %
 %   Steps: GPR training, main ablation (seeds 101-120 + estimator),
 %   figures, scenarios, all stress tests (seeds 201-210), sweep figures.
@@ -10,6 +11,7 @@ function run_all(fresh)
 %   Console output is saved to output/run_all_log.txt.
 
 if nargin < 1, fresh = true; end
+if nargin < 2, train = true; end
 root = fileparts(fileparts(mfilename('fullpath')));
 out  = fullfile(root, 'output');
 addpath(genpath(fullfile(root, 'class')));
@@ -36,6 +38,7 @@ steps = {
     'stress tests',     @() run_sweeps()
     'sweep figures',    @() plot_sweeps()
 };
+if ~train, steps = steps(2:end, :); end
 for k = 1:size(steps, 1)
     fprintf('\n==================== %s (%.1f h so far) ====================\n', ...
             steps{k,1}, toc(t0) / 3600);
