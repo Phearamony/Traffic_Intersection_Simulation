@@ -28,28 +28,34 @@ end
 
 rng(0);   % fixed jitter, so the figure is the same every time it is made
 T = read_runs(csv_path);   % last row per (seed, configuration)
+if ismember('study', T.Properties.VariableNames) && any(T.study == "ablation")
+    T = T(T.study == "ablation", :);           % only rows written by run_ablation
+end
 
-cfg   = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', 'C3_mpc_rsu_gpr'};
-names = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2', 'C2G', 'C3I', 'C3'};
+cfg   = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', ...
+         'C3_mpc_rsu_gpr', 'C4_no_unc', 'C4_no_online', 'C4_speed_adv', 'C4_proposed'};
+names = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2', 'C2G', 'C3I', 'C3', 'C4-unc', 'C4-onl', 'C4-spd', 'C4'};
 keep  = ismember(cfg, cellstr(unique(T.label)));
 cfg = cfg(keep); names = names(keep);
 
 col_dot  = [0.70 0.70 0.70];
 col_mean = [0.10 0.10 0.10];
-col_prop = [0.80 0.25 0.10];    % proposed configuration C3
+col_prop = [0.80 0.25 0.10];    % proposed configuration C4
 fs = 11;
 
 % ---------------- Figure 1: per-configuration summary ----------------
-mets   = {'fuel_rt_mL', 'fuel_L100km', 'gap_rt_s', 'rt_completion', 'n_exited', 'delay_all_s'};
+mets   = {'fuel_rt_mL', 'fuel_L100km', 'gap_rt_s', 'rt_completion', 'n_exited', 'delay_all_s', ...
+          'n_conflict', 'jerk_rms'};
 labels = {'Fuel per right-turner [mL]', 'Fuel, all vehicles [L/100 km]', ...
           'Gap wait of right-turners [s]', 'Right-turn completion [%]', ...
-          'Vehicles that finished [veh]', 'Mean delay [s]'};
-scale  = [1 1 1 100 1 1];
+          'Vehicles that finished [veh]', 'Mean delay [s]', ...
+          'Turn conflicts per run (PET < 1.5 s)', 'RMS jerk [m/s^3]'};
+scale  = [1 1 1 100 1 1 1 1];
 mets_ok = ismember(mets, T.Properties.VariableNames);
 mets = mets(mets_ok); labels = labels(mets_ok); scale = scale(mets_ok);
 
-f1 = figure('Color', 'w', 'Position', [100 100 1500 720]);
-tl = tiledlayout(f1, 2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
+f1 = figure('Color', 'w', 'Position', [100 100 1900 720]);
+tl = tiledlayout(f1, 2, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
 for m = 1:numel(mets)
     ax = nexttile(tl); hold(ax, 'on'); box(ax, 'on'); grid(ax, 'on');
     for i = 1:numel(cfg)
@@ -59,12 +65,12 @@ for m = 1:numel(mets)
         jit = (rand(size(x)) - 0.5) * 0.30;
         scatter(ax, i + jit, x, 14, col_dot, 'filled', 'MarkerFaceAlpha', 0.7);
         [mu, hw] = meanCI(x);
-        c = col_mean; if strcmp(cfg{i}, 'C3_mpc_rsu_gpr'), c = col_prop; end
+        c = col_mean; if strcmp(cfg{i}, 'C4_proposed'), c = col_prop; end
         errorbar(ax, i, mu, hw, 'o', 'Color', c, 'MarkerFaceColor', c, ...
                  'MarkerSize', 6, 'LineWidth', 1.6, 'CapSize', 8);
     end
     xlim(ax, [0.4, numel(cfg) + 0.6]);
-    set(ax, 'XTick', 1:numel(cfg), 'XTickLabel', names, 'FontSize', fs);
+    set(ax, 'XTick', 1:numel(cfg), 'XTickLabel', names, 'FontSize', fs, 'XTickLabelRotation', 45);
     ylabel(ax, labels{m}, 'FontSize', fs);
 end
 n_seeds = numel(unique(T.seed));
@@ -73,13 +79,15 @@ exportgraphics(f1, fullfile(out_dir, 'ablation_summary.png'), 'Resolution', 300)
 close(f1);
 
 % ---------------- Figure 2: paired differences ----------------
-cmp = { 'C2G_idm_rsu_gpr', 'C3_mpc_rsu_gpr', 'Controller | GPR  (C2G\rightarrowC3)';
-        'C2_idm_rsu',      'C3I_mpc_rsu',    'Controller | IDM est.  (C2\rightarrowC3I)';
-        'C2_idm_rsu',      'C2G_idm_rsu_gpr','Estimator | IDM ctrl  (C2\rightarrowC2G)';
-        'C3I_mpc_rsu',     'C3_mpc_rsu_gpr', 'Estimator | MPC ctrl  (C3I\rightarrowC3)';
-        'C1_human',        'C2_idm_rsu',     'Coordination | ref.  (C1\rightarrowC2)';
-        'C1_human',        'C3_mpc_rsu_gpr', 'Coordination | proposed  (C1\rightarrowC3)';
-        'V2V_IDM',         'V2V_MPC',        'Controller | no RSU  (V2V-IDM\rightarrowV2V-MPC)' };
+cmp = { 'C1_human',        'C4_proposed',     'Proposed vs human  (C1\rightarrowC4)';
+        'C3_mpc_rsu_gpr',  'C4_proposed',     'Proposed vs conference  (C3\rightarrowC4)';
+        'V2V_MPC',         'C4_proposed',     'RSU | MPC  (V2V-MPC\rightarrowC4)';
+        'C4_no_unc',       'C4_proposed',     'Uncertainty margins';
+        'C4_no_online',    'C4_proposed',     'Online learning';
+        'C4_speed_adv',    'C4_proposed',     'Arrival time vs speed advice';
+        'C2_idm_rsu',      'C3I_mpc_rsu',     'Controller | IDM est.  (C2\rightarrowC3I)';
+        'C3I_mpc_rsu',     'C3_mpc_rsu_gpr',  'Estimator | MPC  (C3I\rightarrowC3)';
+        'V2V_IDM',         'V2V_MPC',         'Controller | no RSU' };
 pm  = {'fuel_rt_mL', 'gap_rt_s', 'n_exited'};
 pl  = {'\Delta fuel per right-turner [mL]', '\Delta gap wait [s]', '\Delta vehicles finished [veh]'};
 

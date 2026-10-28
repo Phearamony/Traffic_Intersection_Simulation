@@ -22,10 +22,16 @@ function sched = make_traffic_schedule(S, KKmax, dt, DemandStages, lambdaNS_axis
 %     'scenarioB'  fixed illustrative scenario with two turners and a mutual turn
 %   S.asym         share of the east-west flow on the westbound approach
 %
-%   DRIVERS (desired speed U[a,b] m/s, time headway U[c,d] s)
-%     nominal      Vd U[23,29], Th U[1.2,2.4]   (GPR training distribution)
-%     aggressive   Vd U[26,32], Th U[0.8,1.6]
-%     cautious     Vd U[18,24], Th U[1.8,3.0]
+%   DRIVERS (desired speed U[a,b] m/s, time headway U[c,d] s; IDM a, b, s0;
+%   human gap margin hm)
+%     nominal      Vd U[23,29], Th U[1.2,2.4], a U[1.0,2.0], b U[1.5,3.0],
+%                  s0 U[1.5,2.5], hm U[1.5,3.0]   (training distribution)
+%     aggressive   Vd U[26,32], Th U[0.8,1.6], a U[1.5,2.5], b U[2.5,3.5],
+%                  s0 U[1.0,2.0], hm U[0.8,2.0]
+%     cautious     Vd U[18,24], Th U[1.8,3.0], a U[0.7,1.4], b U[1.2,2.2],
+%                  s0 U[2.0,3.0], hm U[2.5,4.0]
+%   The extra driver parameters come from their own stream (seed
+%   7e5 + seed), so arrivals, turns, Vd and Th are unchanged.
 %
 %   SCENARIOS (fixed before any result was seen; times in s from the start).
 %   The east-west signal is green from 60 s to 114.5 s. Every vehicle has
@@ -60,6 +66,10 @@ for di = 1:4
     sched.([d '_Vd'])        = zeros(1, KKmax);
     sched.([d '_Th'])        = zeros(1, KKmax);
     sched.([d '_U'])         = zeros(1, KKmax);
+    sched.([d '_A'])         = 1.5 * ones(1, KKmax);
+    sched.([d '_B'])         = 2.5 * ones(1, KKmax);
+    sched.([d '_S0'])        = 2.0 * ones(1, KKmax);
+    sched.([d '_HM'])        = 2.0 * ones(1, KKmax);
 end
 
 % ---------------- fixed scenarios ----------------
@@ -113,9 +123,24 @@ for kk = 1:KKmax
 end
 
 % CAV draws from their own stream, so they do not change the traffic above
-rsU = RandStream('mt19937ar', 'Seed', 5e5 + S.seed);
+U = rand_stream(5e5 + S.seed, 4, KKmax);
 for di = 1:4
-    sched.([dirs{di} '_U']) = rand(rsU, 1, KKmax);
+    sched.([dirs{di} '_U']) = U(di, :);
+end
+
+% individual driver parameters, own stream as well
+switch S.driver
+    case 'nominal',    ra = [1.0 2.0]; rb = [1.5 3.0]; rs0 = [1.5 2.5]; rhm = [1.5 3.0];
+    case 'aggressive', ra = [1.5 2.5]; rb = [2.5 3.5]; rs0 = [1.0 2.0]; rhm = [0.8 2.0];
+    case 'cautious',   ra = [0.7 1.4]; rb = [1.2 2.2]; rs0 = [2.0 3.0]; rhm = [2.5 4.0];
+end
+D = rand_stream(7e5 + S.seed, 16, KKmax);
+for di = 1:4
+    d = dirs{di};
+    sched.([d '_A'])  = ra(1)  + diff(ra)  * D(4*di-3, :);
+    sched.([d '_B'])  = rb(1)  + diff(rb)  * D(4*di-2, :);
+    sched.([d '_S0']) = rs0(1) + diff(rs0) * D(4*di-1, :);
+    sched.([d '_HM']) = rhm(1) + diff(rhm) * D(4*di,   :);
 end
 end
 

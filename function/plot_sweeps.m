@@ -13,8 +13,8 @@ function plot_sweeps(out_dir)
 %                            95% CI; dashed line = reference configuration
 %                            (C1 where the setting does not apply to it).
 %   For studies with the estimator comparison (sweep_estimator.csv):
-%     sweep_<study>_estimator.png   RMSE on the common sample set and the
-%                                   failure rate of each estimator.
+%     sweep_<study>_estimator.png   RMSE and mean absolute error of each
+%                                   estimator on the common sample set.
 %   Tables
 %     sweep_stats.csv        study, point, label, metric, n, mean, std, ci95
 %     sweep_limits.csv       for every study and configuration, the first
@@ -40,15 +40,17 @@ D = sweep_definitions();
 E = [];
 if exist(est_csv, 'file'), E = read_runs(est_csv); end
 
-order  = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', 'C3_mpc_rsu_gpr'};
-short  = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2', 'C2G', 'C3I', 'C3'};
-colors = [0.45 0.45 0.45; 0.55 0.35 0.65; 0.30 0.60 0.75; 0.20 0.45 0.80; 0.35 0.70 0.35; 0.90 0.60 0.10; 0.80 0.20 0.10];
-markers = {'s', 'v', '^', 'o', 'd', 'p', 'o'};
+order  = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', 'C3_mpc_rsu_gpr', ...
+          'C4_no_online', 'C4_proposed'};
+short  = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2', 'C2G', 'C3I', 'C3', 'C4 (no online)', 'C4'};
+colors = [0.45 0.45 0.45; 0.55 0.35 0.65; 0.30 0.60 0.75; 0.20 0.45 0.80; 0.35 0.70 0.35; ...
+          0.90 0.60 0.10; 0.20 0.55 0.85; 0.95 0.55 0.45; 0.80 0.20 0.10];
+markers = {'s', 'v', '^', 'o', 'd', 'p', 'd', 'v', 'o'};
 
 mets  = {'fuel_rt_mL', 'fuel_L100km', 'gap_rt_s', 'rt_completion', 'delay_all_s', 'n_exited', 'n_blocked', 'n_conflict'};
 mlab  = {'Fuel per right-turner [mL]', 'Fuel, all vehicles [L/100 km]', 'Gap wait [s]', ...
          'Right-turn completion [%]', 'Mean delay [s]', 'Vehicles through [veh]', ...
-         'Blocked arrivals [veh]', 'Turn conflicts per run (gap < 2 s)'};
+         'Blocked arrivals [veh]', 'Turn conflicts per run (PET < 1.5 s)'};
 mscale = [1 1 1 100 1 1 1 1];
 
 statRows = {}; limRows = {};
@@ -67,7 +69,7 @@ for si = 1:numel(studies)
     tl = tiledlayout(f, 2, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
     for m = 1:numel(mets)
         ax = nexttile(tl); hold(ax, 'on'); grid(ax, 'on'); box(ax, 'on');
-        hs = []; hn = {};
+        hs = gobjects(0); hn = {};
         for li = 1:numel(labs)
             lab = labs{li}; ci = find(strcmp(order, lab));
             mu = nan(size(xs)); hw = nan(size(xs)); nn = zeros(size(xs));
@@ -132,13 +134,14 @@ for si = 1:numel(studies)
         if ~isempty(Es)
             f2 = figure('Color', 'w', 'Position', [60 60 1000 380]);
             tl2 = tiledlayout(f2, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
-            names = {'naive', 'idm', 'gpr'}; nlab = {'naive d/v', 'IDM forward sim.', 'GPR'};
-            ecol = [0.55 0.55 0.55; 0.20 0.45 0.80; 0.80 0.20 0.10];
-            panels = {{'rmse_s', 'common', 'RMSE on common queries [s]'}, {'fail_pct', 'own', 'Queries without an estimate [%]'}};
+            names = {'idm', 'phys', 'gpr', 'pigpr', 'pigpr_on'};
+            nlab = {'IDM forward sim.', 'Physics', 'GPR', 'PI-GPR', 'PI-GPR online'};
+            ecol = [0.20 0.45 0.80; 0.55 0.55 0.55; 0.35 0.70 0.35; 0.90 0.50 0.10; 0.80 0.20 0.10];
+            panels = {{'rmse_s', 'common', 'RMSE on common queries [s]'}, {'mae_s', 'common', 'Mean absolute error [s]'}};
             for pp = 1:2
                 ax = nexttile(tl2); hold(ax, 'on'); grid(ax, 'on'); box(ax, 'on');
-                hs = [];
-                for j = 1:3
+                hs = gobjects(0);
+                for j = 1:numel(names)
                     mu = nan(size(xs)); hw = nan(size(xs));
                     for p = 1:numel(ptxt)
                         x = Es.(panels{pp}{1})(Es.estimator == names{j} & Es.set == panels{pp}{2} & Es.point == ptxt{p});

@@ -19,14 +19,19 @@ end
 out_dir = fileparts(csv_path);
 
 T = read_runs(csv_path);   % last row per (seed, configuration)
+if ismember('study', T.Properties.VariableNames) && any(T.study == "ablation")
+    T = T(T.study == "ablation", :);           % only rows written by run_ablation
+end
 
 metrics = {'fuel_rt_mL', 'fuel_str_mL', 'fuel_L100km', 'gap_rt_s', 'rt_completion', ...
-           'n_exited', 'red_str_s', 'onc_gap_min_s', 'onc_gap_mean_s', 'n_conflict', ...
-           'delay_rt_s', 'delay_str_s', 'delay_all_s', 'n_blocked', 'qp_fail_pct'};
+           'n_exited', 'red_str_s', 'pet_min_s', 'pet_mean_s', 'n_conflict', 'n_collision', ...
+           'delay_rt_s', 'delay_str_s', 'delay_all_s', 'n_blocked', 'entry_wait_s', ...
+           'jerk_rms', 'stops_per_veh', 'qp_fail_pct'};
+metrics = metrics(ismember(metrics, T.Properties.VariableNames));
 labels  = unique(T.label, 'stable');
 
 % ---------- per-configuration statistics ----------
-rows = {};
+rows = cell(0, 6);
 for i = 1:numel(labels)
     Ti = T(T.label == labels(i), :);
     for m = 1:numel(metrics)
@@ -44,14 +49,20 @@ stats = cell2table(rows, 'VariableNames', {'label', 'metric', 'n', 'mean', 'std'
 writetable(stats, fullfile(out_dir, 'ablation_stats.csv'));
 
 % ---------- paired comparisons (B minus A) ----------
-cmp = { 'C2_idm_rsu',      'C3I_mpc_rsu';      % controller effect, IDM estimator
+cmp = { 'C1_human',        'C4_proposed';      % proposed vs uncoordinated
+        'C3_mpc_rsu_gpr',  'C4_proposed';      % proposed vs conference method
+        'V2V_MPC',         'C4_proposed';      % proposed vs connected, no RSU
+        'C4_no_unc',       'C4_proposed';      % uncertainty margins
+        'C4_no_online',    'C4_proposed';      % online learning
+        'C4_speed_adv',    'C4_proposed';      % arrival-time vs speed messages
+        'C2_idm_rsu',      'C3I_mpc_rsu';      % controller effect, IDM estimator
         'C2G_idm_rsu_gpr', 'C3_mpc_rsu_gpr';   % controller effect, GPR estimator
         'C2_idm_rsu',      'C2G_idm_rsu_gpr';  % estimator effect, IDM control
         'C3I_mpc_rsu',     'C3_mpc_rsu_gpr';   % estimator effect, MPC control
         'C1_human',        'C2_idm_rsu';       % reference scheme vs uncoordinated
-        'C1_human',        'C3_mpc_rsu_gpr';   % proposed vs uncoordinated
+        'C1_human',        'C3_mpc_rsu_gpr';   % conference method vs uncoordinated
         'V2V_IDM',         'V2V_MPC' };        % controllers without RSU
-prow = {};
+prow = cell(0, 11);
 for c = 1:size(cmp, 1)
     A = T(T.label == cmp{c, 1}, :);
     B = T(T.label == cmp{c, 2}, :);
@@ -74,7 +85,6 @@ for c = 1:size(cmp, 1)
         prow(end+1, :) = {string(cmp{c,1}), string(cmp{c,2}), string(metrics{m}), ...
                           n, mean(xa(ok)), mean(xb(ok)), md, hw, rel, p_w, p_t}; %#ok<AGROW>
     end
-    if isempty(s), continue; end
 end
 pairs = cell2table(prow, 'VariableNames', {'A', 'B', 'metric', 'n_pairs', 'mean_A', ...
     'mean_B', 'mean_diff', 'ci95_diff', 'rel_diff_pct', 'p_wilcoxon', 'p_ttest'});

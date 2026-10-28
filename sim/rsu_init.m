@@ -1,0 +1,42 @@
+function rsu = rsu_init(cfg, G, S, opts)
+%RSU_INIT  Roadside unit: what it knows, its estimators and its logs.
+%
+%   The RSU only knows what it received over V2X (rsu_receive): position,
+%   speed, acceleration and path of each connected vehicle, with the
+%   time stamp of the message. Human drivers are invisible unless
+%   ABL_SENSE = 'all' (roadside sensing). In the estimator-evaluation and
+%   data-collection modes (opts.est_eval / opts.collect) it sees every
+%   vehicle, like a perfect roadside sensor, and plans nothing.
+%
+%   Estimator models (simplot/estimators.mat, from train_estimators):
+%   theta (physics), gpr (4 inputs), pigpr (7 inputs, residual on physics).
+
+rsu.cfg = cfg;
+rsu.collect = isfield(opts, 'collect') && opts.collect;
+rsu.eval = isfield(opts, 'est_eval') && opts.est_eval;
+rsu.plan = strcmp(cfg.coord, 'rsu') && ~rsu.collect && ~rsu.eval;
+rsu.known = struct('id', {}, 's', {}, 'v', {}, 'a', {}, 't', {}, 'p', {}, ...
+                   'app', {}, 'mov', {}, 'committed', {});
+rsu.snap_every = 2.0;                % [s] snapshot interval for learning / evaluation
+rsu.pending = struct('id', {}, 't', {}, 'app', {}, 'g', {}, 'z', {}, 'z4', {}, 'tphys', {}, 'pred', {});
+rsu.samples = zeros(0, 14);          % [t_snap id app(1=E,2=W) d v gap g n vl nR prior tphys y idm]
+rsu.evalrows = zeros(0, 12);         % see rsu_crossed
+rsu.lambda = 0.995;                  % forgetting factor of online learning
+rsu.h_min = 1.0;                     % [s] minimum headway between stop-line arrivals
+rsu.pet = 1.5;                       % [s] PET margin of a slot
+rsu.plans = 0; rsu.noslot = 0; rsu.online_n = 0;
+rsu.theta = [2.0, 2.0, 1.5];
+rsu.gpr = []; rsu.pigpr = []; rsu.pigpr_on = [];
+
+needModel = rsu.eval || (rsu.plan && any(strcmp(cfg.est, {'gpr', 'pigpr'})));
+mf = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'simplot', 'estimators.mat');
+if isfield(S, 'estfile') && ~isempty(S.estfile), mf = S.estfile; end
+if exist(mf, 'file')
+    E = load(mf);
+    if isfield(E, 'theta'), rsu.theta = E.theta; end
+    if isfield(E, 'gpr'), rsu.gpr = E.gpr; end
+    if isfield(E, 'pigpr'), rsu.pigpr = E.pigpr; rsu.pigpr_on = E.pigpr; end
+elseif needModel
+    error('rsu_init: %s not found. Run train_estimators first.', mf);
+end
+end

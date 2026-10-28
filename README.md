@@ -1,177 +1,119 @@
 # Learning-Based Optimal Right-Turn Coordination for Connected and Automated Vehicles
 
 MATLAB simulation for my master's research at **Gunma University (Kamal Laboratory)**. It studies how
-Connected and Automated Vehicles (CAVs) can turn right efficiently at signalized intersections in
-**left-hand traffic** (Japan).
+Connected and Automated Vehicles (CAVs) can turn right efficiently and safely at signalized intersections
+in **left-hand traffic** (Japan).
 
-📄 **Paper:** [Learning-Based Optimal Right-Turn Coordination System for Connected and Automated Vehicles at Intersections](https://drive.google.com/file/d/1eD-5lxTvvwlGY6lJCwVpVNrC4kos1YCi/view?usp=sharing)
+📄 **Conference paper:** [Learning-Based Optimal Right-Turn Coordination System for Connected and Automated Vehicles at Intersections](https://drive.google.com/file/d/1eD-5lxTvvwlGY6lJCwVpVNrC4kos1YCi/view?usp=sharing)
 *Phearamony Phan, Mahmudul Hasan, A. S. M. Bakibillah, Md Abdus Samad Kamal, Kou Yamada*.
 SICE Festival 2026 (SICE Annual Conference), Yokohama, Japan.
 
-![Trajectories under the proposed GPR + MPC + RSU coordination](output/demo_EW_trajectories.png)
+This branch is the **journal version (v2)**: a single simulation engine for every configuration, real
+turning paths, a physics-informed GPR with uncertainty and online learning, and an arrival-time MPC.
+The code of the conference paper is kept in `archive/v1/`.
 
 ---
 
 ## The problem
 
 At many Japanese intersections there is no dedicated right-turn lane or protected arrow. A right-turning
-car has to wait at the stop line for a gap in the oncoming traffic. While it waits, every car behind it
-is blocked. The queue can spill over into the next red phase, which wastes time and fuel.
+car waits in the junction for a gap in the oncoming traffic, and on a single-lane approach every car
+behind it waits too.
 
-## The proposed system
+## The method (v2)
 
-A Road Side Unit (RSU) at the intersection collects vehicle states over V2X and plans a gap for each
-right-turning vehicle at the start of every green phase.
+A Road Side Unit (RSU) receives the state of every connected vehicle over V2X and plans a slot for each
+right-turner in the oncoming stream.
 
-1. **Bayesian GPR arrival-time estimator:** a Gaussian Process Regression model, trained offline on
-   driving data, predicts when each vehicle will reach the stop line from its distance and speed `(d, v)`.
-   It always returns a finite estimate (IDM forward simulation fails in 18.1% of cases).
-2. **Slot-search optimizer (RSU):** finds the insertion slot in the oncoming stream that minimizes total
-   squared delay, then assigns a coordinated crossing time to every vehicle.
-3. **QP-MPC controller:** each CAV runs a finite-horizon quadratic-programming MPC that tracks its
-   assigned crossing time while respecting acceleration and safe-gap constraints.
+1. **Physics-informed GPR (PI-GPR) arrival-time estimator.** The prior is the IDM forward simulation of
+   the queue (the conference estimator); a sparse Gaussian process learns its error from
+   `[d, v, gap, signal timing, vehicles ahead, speed ahead, right-turners ahead, prior]`. It gives a
+   prediction and its uncertainty, and keeps learning online from every arrival the RSU observes.
+2. **Uncertainty-aware slot search.** The conference slot search (insert the turner before oncoming
+   vehicle *p*, minimise the summed squared delay, exhaustive over *p*), with safety margins computed from
+   the real conflict-zone geometry plus a post-encroachment margin plus `z * sqrt(sigma_turner^2 + sigma_oncoming^2)`.
+3. **Arrival-time MPC.** The RSU sends target arrival times (not speeds). Each CAV solves a QP-MPC with a
+   10 s horizon, jerk penalty, curve speed limits, signal timing, and the constraint "do not reach this
+   point before the target time". A right-turner with a slot rolls through the turn without stopping.
 
-## Key results (CISE 2026 paper)
-
-These are the single-seed results of the conference paper, from the code before the journal changes
-(`archive/output_cise2026/ablation_summary.csv`). The journal version reruns the ablation over 20 seeds
-with the fixes listed under *Journal experiments*; its results replace this table once available.
-
-| Config | Controller | RSU estimator | Right-turn fuel [mL] | Straight fuel [mL] | Gap wait [s] |
-|---|---|---|---|---|---|
-| C1: human driving | IDM + noise | none | 67.59 | 34.45 | 42.32 |
-| C2: reference | IDM | IDM | 60.35 | 45.53 | 24.20 |
-| C2G | IDM | GPR | 60.35 | 45.53 | 24.20 |
-| C3I | QP-MPC | IDM | 42.90 | 36.38 | 28.50 |
-| **C3: proposed** | **QP-MPC** | **GPR** | **42.90** | **36.38** | **28.50** |
-
-* **37% lower right-turn fuel consumption** than uncoordinated human driving.
-* Most of the fuel benefit comes from pairing QP-MPC with RSU-assigned crossing times. MPC brakes once
-  and smoothly, while IDM misses its slot and oscillates.
-* GPR gives the same slot assignments as IDM forward simulation at a fraction of the compute cost: one
-  closed-form evaluation instead of up to 120 simulated steps per vehicle.
-
-![GPR arrival-time model diagnostics](output/gpr_model_diagnostics.png)
+All vehicles drive along real lane paths (straight, left arc, right arc), so turns are continuous and the
+safety measure is the post-encroachment time (PET) at the conflict zones.
 
 ---
 
 ## Repository structure
 
 ```
-class/        Car.m (IDM / QP-MPC vehicle), RSU.m (V2X buffer, GPR estimator, slot search)
-function/     run settings, metrics, statistics and plotting functions
-  abl_settings.m            seed, horizon, plot and logging switches for every script
-  collect_ablation_metrics  one results row per (seed, configuration)
-  compute_turn_safety       time gap between each right turn and oncoming traffic
-  summarize_ablation        means, 95% CIs, paired tests
-  plot_*                    trajectory, fuel and multi-seed summary figures
-main/         entry points: one script per configuration, plus run_ablation and make_figures
-simplot/      intersection drawing, initial values, trained GPR model, shared traffic schedule
-output/       figures (EW_*, NS_*, fuel_*, estimator_*, ablation_*), results CSVs, demo video
-archive/      old versions and unused files, kept for reference (see archive/README.md)
+sim/          the simulation engine (one engine for every configuration)
+  sim_run.m        main loop: signals, arrivals, entry queue, leaders, V2X + RSU, decisions,
+                   control, integration, logging, live animation
+  sim_config.m     the switches that define each configuration (C1 ... C4)
+  sim_main.m       run one configuration with the ABL_* settings, write metrics and figures
+  geom_*.m         lane paths, arcs, conflict zones, waiting points
+  ctrl_idm.m, ctrl_mpc.m, qp_solve.m      controllers
+  turn_gap_ok.m    right-turn gap acceptance (human rule, on-board CAV check)
+  rsu_*.m          RSU: received states, estimators, slot planning, online learning
+  est_*.m, gp_*.m  estimators: IDM forward simulation, queue physics, sparse GP
+  metrics_*.m      metrics of a run (fuel, delay, PET, jerk, ...) and the results CSV
+  draw_intersection.m   animation frame (rotated vehicles on their paths)
+function/     settings, traffic schedule, statistics and figure functions
+main/         entry points and runners (see below)
+simplot/      estimators.mat (trained by train_estimators)
+output/       figures, results CSVs
+archive/      v1 code of the conference paper and older files (see archive/README.md)
 ```
 
-### Main scripts
+## Configurations
 
-| Script | Configuration |
-|---|---|
-| `main/main_human_driving.m` | Generates the shared traffic schedule for the current seed (and runs C1) |
-| `main/main_human_driving_plot.m` | C1: uncoordinated human driving (IDM + noise), writes the C1 metrics |
-| `main/run_ablation.m` | Runs every configuration over many seeds and summarizes the results |
-| `main/make_figures.m` | Makes every journal figure after `run_ablation` |
-| `main/run_scenarios.m` | Illustrative fixed scenarios for the paper |
-| `main/watch_main.m` | Watch any configuration as a live animation; writes nothing to `output/` or the results CSVs |
-| `main/run_sweeps.m` | Stress tests (demand, right-turn share, latency, loss, penetration, drivers, asymmetry) |
-| `main/main_v2v_idm.m` | V2V-only IDM baseline |
-| `main/main_v2v_idm_rsu.m` | C2: IDM + RSU (IDM estimator) |
-| `main/main_v2v_idm_rsu_gpr.m` | C2G: IDM + RSU (GPR estimator) |
-| `main/main_v2v_mpc.m` | V2V-only QP-MPC baseline |
-| `main/main_v2v_mpc_rsu.m` | C3I: QP-MPC + RSU (IDM estimator) |
-| `main/main_v2v_mpc_rsu_gpr.m` | **C3: proposed system** |
-| `main/main_human_driving_gpr_train.m` | Collect data and train the GPR arrival-time model |
-| `main/main_estimator_compare.m` | Compare GPR, IDM forward simulation and the naive `d/v` estimator |
-| `main/demo_main.m` | Light-traffic demo with live intersection and trajectory animation |
+| Name | Script | Controller | Coordination | Estimator | RSU message |
+|---|---|---|---|---|---|
+| C1 | `main_human_driving.m` | IDM, human (noise, individual parameters) | none, human gap rule | | |
+| V2V_IDM | `main_v2v_idm.m` | IDM | V2V, on-board gap check | | |
+| V2V_MPC | `main_v2v_mpc.m` | MPC | V2V, on-board gap check | | |
+| C2 | `main_v2v_idm_rsu.m` | IDM | RSU slots | IDM forward sim. | speed |
+| C2G | `main_v2v_idm_rsu_gpr.m` | IDM | RSU slots | GPR | speed |
+| C3I | `main_v2v_mpc_rsu.m` | MPC | RSU slots | IDM forward sim. | speed |
+| C3 | `main_v2v_mpc_rsu_gpr.m` | MPC | RSU slots | GPR | speed (conference method) |
+| **C4** | `main_proposed.m` | **MPC** | **RSU slots + uncertainty margins** | **PI-GPR, online** | **arrival time** |
+| C4_NOUNC | | as C4, fixed margins | | | |
+| C4_NOONLINE | | as C4, no online learning | | | |
+| C4_SPEED | | as C4, speed messages | | | |
 
-## Getting started
+Every configuration shares the same roads, traffic, driver parameters, signal plan, spawning and metrics;
+only the switches in `sim/sim_config.m` differ.
 
-Requirements: **MATLAB** (R2023a or newer recommended) with the Optimization Toolbox (`quadprog`) and the
-Statistics and Machine Learning Toolbox (GPR).
-
-```matlab
-% from the repo root
-cd main
-demo_main          % quick visual demo of the proposed system
-```
-
-Every `main_*.m` script now finds the repo folders from its own location, so no path edits are needed.
-
-### Watching a configuration (nothing saved)
-
-```matlab
-watch_main('C3')                       % proposed system, seed 101
-watch_main('C1', 105)                  % human driving, seed 105
-watch_main('C3', 1, 'ABL_SCHED', 'scenarioB')                       % illustrative scenario
-watch_main('C3', 201, 'ABL_SCHED', 'const', 'ABL_PEN', '0.5')       % 50% CAVs
-```
-
-`watch_main` makes the traffic for that seed in a temporary folder, plays the live intersection
-animation, and writes no results row, no figure and no `simplot/traffic_schedule.mat`.
-Pressing F5 on a `main_*.m` script still works as before, but that does save figures and a results row.
+---
 
 ## How to run everything (step by step)
 
-All commands go in the MATLAB Command Window. Close MATLAB, the `output` folder in Explorer, and pause
-OneDrive (if the repo is inside it) before pulling, so no file is locked.
-
-**Before you start** (PowerShell, in the repo folder):
+All commands go in the MATLAB Command Window (MATLAB with the Optimization Toolbox for `quadprog`
+and the Statistics and Machine Learning Toolbox for the statistics). Close MATLAB, the `output` folder
+in Explorer, and pause OneDrive (if the repo is inside it) before pulling.
 
 ```
 git pull origin main
 ```
 
-Then in MATLAB:
-
 ```matlab
 cd main
+run_all          % everything below, unattended (log in output/run_all_log.txt)
 ```
+
+or step by step:
 
 | Step | Command | What it does | Output |
 |---|---|---|---|
-| all | `run_all` | Fresh start + steps 1 and 4 to 8 in one call, unattended. Log in `output/run_all_log.txt` | everything below |
-| 0 (optional) | `watch_main('C3')` | Live animation of one configuration, nothing saved | none |
-| 1 | `main_human_driving_gpr_train` | Train the GPR model once (seeds 1-16 train, 17-20 test) | `simplot/gpr_arrival_model.mat`, `output/gpr_holdout_metrics.csv`, `output/gpr_model_diagnostics.png` |
-| 2 | see **Fresh start** below | Remove old results (needed after every code update) | |
-| 3 | `run_ablation(101:105)` | Quick test: 5 seeds x 7 configurations | rows in `output/ablation_runs.csv` |
-| | | Check: every configuration printed a `[metrics]` line and `output/ablation_errors.log` is empty or missing. Then repeat step 2. | |
-| 4 | `run_ablation(101:120, 720, true)` | Full main ablation: 20 seeds x 7 configurations + estimator comparison (about 4x step 3) | `output/ablation_runs.csv`, `ablation_stats.csv`, `ablation_pairs.csv`, `estimator_runs.csv` |
-| 5 | `make_figures` | Main figures from one typical seed + multi-seed summary (adds no rows to the CSVs) | `output/EW_*.png`, `NS_*.png`, `fuel_*.png`, `estimator_comparison_*.png`, `ablation_summary.png`, `ablation_paired.png` |
+| 0 (optional) | `watch_main('C4')` | Live animation of one configuration, nothing saved | none |
+| 1 | `train_estimators` | Collect data (seeds 1-20, human drivers) and fit the queue physics, GPR and PI-GPR | `simplot/estimators.mat`, `output/gpr_holdout_metrics.csv`, `output/gpr_model_diagnostics.png` |
+| 2 | fresh start (below) | Remove old results | |
+| 3 | `run_ablation(101:105)` | Quick test: 5 seeds x 11 configurations | rows in `output/ablation_runs.csv` |
+| 4 | `run_ablation(101:120, 720, true)` | Main ablation, 20 seeds + estimator comparison | `ablation_runs.csv`, `ablation_stats.csv`, `ablation_pairs.csv`, `estimator_runs.csv` |
+| 5 | `make_figures` | Per-run figures of a typical seed + multi-seed summary | `EW_*.png`, `EW_*_ac.png`, `fuel_*.png`, `estimator_comparison_*.png`, `ablation_summary.png`, `ablation_paired.png` |
 | 6 | `run_scenarios` | Illustrative scenarios A and B | `output/scenarios/` |
-| 7 | `run_sweeps` | All stress tests, seeds 201-210 (about 1,070 runs, the longest step). Resumable: Ctrl+C any time, run again to continue | `output/sweeps/sweep_runs.csv`, `sweep_estimator.csv` |
-| 8 | `plot_sweeps` | Sweep figures and tables (only reads the CSVs, re-run any time) | `output/sweeps/sweep_<study>.png`, `sweep_stats.csv`, `sweep_limits.csv` |
+| 7 | `run_sweeps` | Stress tests, seeds 201-210 (resumable: Ctrl+C, run again to continue) | `output/sweeps/` |
+| 8 | `plot_sweeps` | Sweep figures and tables | `sweep_<study>.png`, `sweep_stats.csv`, `sweep_limits.csv` |
 
-Step 7 one study at a time instead:
-
-```matlab
-run_sweeps('demand')        % demand 0.1-0.8 veh/s
-run_sweeps('rtshare')       % right-turn share
-run_sweeps('latency')       % V2X latency
-run_sweeps('loss')          % packet loss
-run_sweeps('penetration')   % mixed traffic, CAV share 0-100%
-run_sweeps('driver')        % aggressive / nominal / cautious drivers
-run_sweeps('asym')          % unbalanced east-west demand
-run_sweeps('vrec')          % RSU speed advice on / off (C2, C3I, C3)
-```
-
-To start the sweeps over, delete the `output/sweeps/` folder.
-
-**If something fails:** the runners do not stop on an error. They write it to `output/ablation_errors.log`
-(main ablation) or `output/sweeps/sweep_errors.log` (sweeps) and continue.
-
-**Files that hold the results** (for the manuscript tables): `output/ablation_stats.csv`,
-`output/ablation_pairs.csv`, `output/estimator_runs.csv`, `output/gpr_holdout_metrics.csv`,
-`output/scenarios/scenario_runs.csv`, `output/sweeps/sweep_stats.csv`, `output/sweeps/sweep_limits.csv`.
-
-**Fresh start** (after a code update, before step 1 or 3). In MATLAB, from `main/`:
+**Fresh start** (after a code update), from `main/`:
 
 ```matlab
 delete ../output/ablation_runs.csv
@@ -180,175 +122,80 @@ rmdir('../output/scenarios', 's')
 rmdir('../output/sweeps', 's')
 ```
 
-A "file not found" warning is fine. Figures in `output/` are overwritten by step 5.
+**Stress tests one at a time:** `run_sweeps('demand')`, `'rtshare'`, `'latency'`, `'loss'`,
+`'penetration'` (mixed traffic), `'driver'` (drivers the estimators were not trained on), `'asym'`.
+
+**If something fails:** runners do not stop on an error; they log it in `output/ablation_errors.log`
+or `output/sweeps/sweep_errors.log` and continue.
 
 ### Function inputs
 
 | Call | Inputs | Defaults |
 |---|---|---|
-| `watch_main(name, seed, 'ABL_...', 'value', ...)` | `name`: `C1`, `V2V_IDM`, `V2V_MPC`, `C2`, `C2G`, `C3I`, `C3`, `HUMAN`, or a script name. `seed`: any whole number. Then any number of setting pairs (table below) | `'C3'`, `101` |
-| `run_ablation(seeds, kkmax, with_estimator)` | `seeds`: list such as `101:105` or `[101 107]`. `kkmax`: steps of 0.5 s. `with_estimator`: `true`/`false` | `101:120`, `720`, `false` |
-| `run_sweeps(studies, seeds)` | `studies`: one name, a cell list such as `{'latency','loss'}`, or `[]` for all | all studies, `201:210` |
-| `run_scenarios(names)` | `'scenarioA'`, `'scenarioB'`, or a cell list | both |
-| `make_figures(seed, kkmax)` | `seed`: seed for the trajectory figures | typical seed, `720` |
-| `plot_sweeps`, `main_human_driving_gpr_train`, `demo_main` | none | |
+| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED (or an old script name). `VIEW`: half-width of the view in metres | `'C4'`, `101`, 60 m |
+| `train_estimators(seeds, n_test, kkmax)` | training seeds, how many of the last ones are held out, steps | `1:20`, `4`, `720` |
+| `run_ablation(seeds, kkmax, with_estimator, cfgs)` | seed list, steps, `true`/`false`, cell list of names | `101:120`, `720`, `false`, all 11 |
+| `run_sweeps(studies, seeds)` | one study name, a cell list, or `[]` for all | all studies, `201:210` |
+| `run_scenarios(names, cfgs)` | `'scenarioA'`, `'scenarioB'` or a cell list | both; C1, C2, C3, C4 |
+| `make_figures(seed, kkmax, cfgs)` | seed of the per-run figures | typical seed, `720` |
+| `run_all(fresh, train)` | `false` keeps results; `train=false` keeps the trained estimators | `true`, `true` |
 
-Seeds: 1-20 GPR training/test, 101-120 main ablation, 201-210 sweeps. Watching a seed from these ranges
-with the same settings shows exactly the logged run.
-
-### Settings for `watch_main` (and hand runs)
+### Settings (`function/abl_settings.m`)
 
 | Setting | Values | Default |
 |---|---|---|
 | `ABL_SCHED` | `'staged'` (light, medium, heavy), `'const'`, `'scenarioA'`, `'scenarioB'` | `'staged'` |
-| `ABL_DEMAND` | east-west flow [veh/s], used with `'const'` | `0.4` |
+| `ABL_DEMAND` | east-west flow [veh/s], with `'const'` | `0.4` |
 | `ABL_RT` | P(right turn given not left), 0 to 1 | `0.15` |
-| `ABL_ASYM` | westbound share of east-west flow, 0 to 1 | `0.5` |
+| `ABL_ASYM` | westbound share of east-west flow | `0.5` |
 | `ABL_DRIVER` | `'nominal'`, `'aggressive'`, `'cautious'` | `'nominal'` |
 | `ABL_PEN` | CAV share, 0 to 1; the rest are human drivers | `1` |
-| `ABL_SENSE` | `'v2x'` (RSU cannot see human cars), `'all'` (RSU sees them but cannot instruct them) | `'v2x'` |
+| `ABL_SENSE` | `'v2x'` (RSU cannot see human cars), `'all'` (RSU sees them, cannot instruct them) | `'v2x'` |
 | `ABL_LAT` | one-way V2X latency [s] | `0` |
 | `ABL_LOSS` | packet loss per message, 0 to 1 | `0` |
-| `ABL_VREC` | `1` = CAVs follow the RSU speed advice, `0` = ignore it | `1` |
 | `ABL_KKMAX` | number of 0.5 s steps | `720` (360 s) |
 
 Examples:
 
 ```matlab
 watch_main('C1', 105)
-watch_main('C3', 1, 'ABL_SCHED', 'scenarioB')
-watch_main('C3', 201, 'ABL_SCHED', 'const', 'ABL_DEMAND', '0.7', 'ABL_DRIVER', 'aggressive')
-watch_main('C3', 201, 'ABL_SCHED', 'const', 'ABL_PEN', '0.5')    % mixed traffic
+watch_main('C4', 1, 'ABL_SCHED', 'scenarioB', 'VIEW', 40)
+watch_main('C4', 201, 'ABL_SCHED', 'const', 'ABL_DEMAND', '0.6', 'ABL_DRIVER', 'aggressive')
+watch_main('C4', 201, 'ABL_SCHED', 'const', 'ABL_PEN', '0.5')    % mixed traffic
 ```
 
-In mixed traffic (`ABL_PEN` below 1), human cars drive with IDM plus noise, have no V2X, ignore the RSU,
-and decide right turns with the C1 gap rule. In the animation they have a thick black outline.
-`ABL_PEN` has no effect on C1, where every car is already human.
+In the animation, cars are drawn at their real position and heading; right-turners are purple, left-turners
+grey; human drivers have a thick outline; a right-turner waiting for its gap has a yellow dot (cyan once the
+RSU has given it a slot).
 
-Pressing F5 on a `main_*.m` script also works (seed 1, live animation), but that **does** save figures
-to `output/` and adds a row to `output/ablation_runs.csv`. Use `watch_main` when you only want to look.
+Running a `main_*.m` script with F5 also works (seed 1, live animation) but **does** save figures to
+`output/` and add a row to `output/ablation_runs.csv` (with an empty study name, so `summarize_ablation`
+ignores it once `run_ablation` rows exist). Use `watch_main` to only look.
 
-## Journal experiments (multi-seed ablation)
+---
 
-Run order, from the MATLAB command window in `main/`:
+## Model details
 
-```matlab
-main_human_driving_gpr_train      % 1. train GPR on seeds 1-16, test on held-out seeds 17-20
-                                  %    -> simplot/gpr_arrival_model.mat, output/gpr_holdout_metrics.csv
-delete ../output/ablation_runs.csv            % 2. start a fresh study (if the file exists)
-delete ../output/estimator_runs.csv
-run_ablation(101:120, 720, true)  % 3. 20 seeds x all configurations, 360 s each,
-                                  %    plus the estimator comparison per seed
-make_figures                      % 4. every simulation figure, into output/ (usual names)
-```
-
-`make_figures` re-runs one representative seed (the one whose C3 right-turner fuel is closest to the
-median) with figures on and the live animation off, without adding rows to the results CSVs, then draws
-the multi-seed summary (`ablation_summary.png`, mean and 95% CI per configuration) and the paired
-differences (`ablation_paired.png`). `make_figures(107)` uses a seed of your choice.
-
-`run_ablation` writes:
-
-| File | Content |
-|---|---|
-| `output/ablation_runs.csv` | one row per (seed, configuration): fuel, idle time, completion, throughput, right-turn separation |
-| `output/ablation_stats.csv` | per configuration and metric: n, mean, std, 95% CI |
-| `output/ablation_pairs.csv` | paired comparisons over seeds: mean difference, 95% CI, Wilcoxon and paired t-test p-values |
-| `output/estimator_runs.csv` | per seed and estimator: RMSE, MAE, bias, share within 2 s / 5 s, failure rate, on each estimator's own samples and on the common sample set |
-| `output/ablation_errors.log` | any run that failed, with the error |
-| `output/ablation_summary.png`, `output/ablation_paired.png` | multi-seed summary and paired-difference figures (from `make_figures`) |
-
-Settings come from `function/abl_settings.m` (environment variables `ABL_*`, listed in that file and in
-[How to run everything](#how-to-run-everything-step-by-step)). The runners regenerate
-`simplot/traffic_schedule.mat` for every seed; for a hand run with F5, run `main_human_driving.m` first.
-
-Changes made for the journal version:
-
-* All configurations, including the baselines, use the east-west corridor only, so every row of the
-  ablation sees the same vehicles.
-* The horizon is 720 steps (360 s), so the heavy demand stage (from 300 s) is reached.
-* Fuel and idle averages use complete trips only (vehicles that left the model); vehicles still inside at
-  the end are counted separately.
-* RSU slot times are aged since the optimisation ran, so a slot "5 s from now" counts down.
-* Vehicles follow the RSU recommended speed (`Car.EffVd`, `RSU.YieldAdvisory`): right-turners slow down to
-  arrive at their slot, and opposing vehicles delayed by a slot get a yield advisory.
-* A right-turner is released only if no opposing through vehicle is inside the junction or predicted to
-  reach its stop line within 2 s (`RSU.OpposingClear`).
-* The GPR test metrics use whole held-out seeds instead of samples drawn from the training set.
-* `compute_turn_safety` reports the time separation between each right turn and the nearest opposing
-  through vehicle at the junction centre.
-
-## Extra studies: illustrative scenarios and stress tests
-
-These come on top of the main ablation and write to their own folders, so nothing is overwritten.
-
-```matlab
-cd main
-run_scenarios          % 2 fixed scenarios, about 10 runs        -> output/scenarios/
-run_sweeps             % 7 stress-test studies, 10 seeds each    -> output/sweeps/
-run_sweeps('demand')   % or one study at a time
-plot_sweeps            % redraw the sweep figures and tables at any time
-```
-
-`run_sweeps` is **resumable**: stop MATLAB at any point and call `run_sweeps` again, it skips every run
-already in `output/sweeps/sweep_runs.csv`. Delete that file (and `sweep_estimator.csv`) to start over.
-Seeds 201-210 are used, disjoint from GPR training (1-20) and the main ablation (101-120).
-
-| Study | Swept setting | Points | Configurations | Runs |
-|---|---|---|---|---|
-| `demand` | constant east-west demand 0.1 to 0.8 veh/s | 8 | C1, C2, C3I, C3 + estimator | 400 |
-| `rtshare` | right-turn share 3.75% to 52.5% of arrivals | 6 | C1, C2, C3 | 180 |
-| `latency` | one-way V2X latency 0 to 2 s | 5 | C2, C3 (C1 reference) | 110 |
-| `loss` | packet loss 0 to 60% per message | 5 | C2, C3 (C1 reference) | 110 |
-| `penetration` | CAV share 0 to 100% (rest human drivers) | 5 | C3 (C1 reference) | 60 |
-| `driver` | aggressive / nominal / cautious drivers | 3 | C1, C3I, C3 + estimator | 120 |
-| `asym` | westbound share of demand 50% to 80% | 3 | C1, C2, C3 | 90 |
-
-Definitions are in `function/sweep_definitions.m`; traffic generation in `function/make_traffic_schedule.m`;
-the V2X channel model in `function/v2x_channel.m`; mixed traffic and the two-tier right-turn decision in
-`Car.IsCAV` and `function/rt_decision.m`.
-
-Outputs in `output/sweeps/`:
-
-| File | Content |
-|---|---|
-| `sweep_<study>.png` | 8 metrics against the swept setting, mean and 95% CI per configuration |
-| `sweep_demand_estimator.png`, `sweep_driver_estimator.png` | estimator RMSE and failure rate |
-| `sweep_stats.csv` | every mean and CI behind the figures |
-| `sweep_limits.csv` | first point where each system fails: completion < 90%, gap wait > 120 s, spillback to the entry, turn separation < 2 s |
-
-Outputs in `output/scenarios/scenarioA/` and `scenarioB/`: the usual figure names (`EW_human.png`,
-`EW_idm_rsu.png`, `EW_mpc_rsu_gpr.png`, `fuel_*.png`, ...) plus `scenario_overview.png` (position and speed
-of every vehicle over time for C1, C2 and C3).
-
-Changes after the first full run (commit after 720e22d), all runs must be repeated:
-
-* **Right-turn decision** (`rt_decision.m`): the RSU can only add turn opportunities. The C1 gap rule
-  always applies; a fresh RSU PROCEED also lets a CAV take the gap the RSU made, after an on-board check
-  with no extra margin. Before, an RSU WAIT blocked a turn even when the natural gap was large.
-* **Speed advice** (`Car.EffVd`, `Car.SetSpeedCap`): followed only within 80 m of the stop line and never
-  below half the desired speed. Before, the advice could slow a vehicle to 2 m/s anywhere on the 150 m
-  approach, and on a single lane every vehicle behind it, which blocked new arrivals at the entry.
-* **GPR estimator**: a fourth input, the signal timing (`signal_feature.m`: time left in green, or minus
-  the time until green), an ARD kernel, and training snapshots every 2 s in every phase instead of only at
-  green start, which is how the RSU uses the model. The estimator comparison now also evaluates every 4 s
-  during green. Retrain the model (step 1).
-* **Safety measure** (`compute_turn_safety.m`): the oncoming gap a right turn accepts (time until the next
-  opposing vehicle reaches the junction centre after the turn starts). A gap under 2 s is a conflict.
-  Columns `onc_gap_min_s`, `onc_gap_mean_s`, `n_conflict` replace the separation columns.
-* **New column `fuel_L100km`**: fuel of every vehicle that entered, finished or not, per distance driven,
-  so the fuel comparison does not depend on which vehicles finished.
-* **`sweep_limits.csv`**: completion criterion is now a 20% drop from the base point; the safety criterion
-  is at least one conflict per run.
-* **Scenarios**: fixed (the lower-cased setting did not match, so both scenarios ran on stale traffic).
-
-Behaviour changes that also apply to the main ablation:
-
-* A right-turner without a fresh RSU advisory (lost, older than 1 s, or no plan) now decides with the C1
-  gap-acceptance rule instead of waiting for the end of green (`rt_decision.m`), the same two-tier rule as
-  the testbed.
-* New result columns: mean delay, blocked arrivals at the entry (spillback), QP-MPC fallback rate.
-  An older results CSV is renamed `*_oldformat.csv` automatically.
+* **Geometry.** One lane per direction, lane width 3 m, stop line 10 m before the centre, entry 150 m
+  before and exit 170 m after the centre. Right turns: arc of radius 6 m, passing inside the centre
+  (Japanese rule), so a mutual right turn is not a conflict. Left turns: radius 4.5 m. Arc speed limited by
+  a lateral acceleration of 3 m/s^2. Conflict zones from the path geometry (centre lines closer than 2.6 m).
+* **Drivers.** Every vehicle draws its own desired speed, time headway, IDM acceleration, comfortable
+  deceleration and standstill gap; human drivers also draw a right-turn gap margin and have acceleration
+  noise. The aggressive and cautious populations shift all of these.
+* **Right-turn decision.** Human: oncoming vehicles judged at constant speed, margin = 0.7 s + own gap
+  margin. CAV: oncoming vehicles predicted with their current acceleration (from V2V), a vehicle at rest
+  may start, a vehicle held by an RSU target arrives no earlier than its target, margin = PET 1.5 s. A
+  vehicle standing at its waiting point blocks its lane, which makes mutual right turns possible. Vehicles
+  yield to a turner already in the junction when they can stop comfortably.
+* **Entry queue.** An arrival that cannot enter (the lane is full at the entry) waits and enters later; its
+  waiting time counts in its delay. Every configuration therefore serves the same demand.
+* **Metrics** (`sim/metrics_compute.m`): fuel per right-turner and per straight vehicle (complete trips),
+  fuel of all vehicles per distance, gap and red waiting time, PET of right turns (minimum and mean), turns
+  with PET < 1.5 s, overlapping occupancies, delay from arrival, blocked arrivals, RMS jerk, stops per
+  vehicle, QP failures.
+* **Estimators** are trained and scored on snapshots during the green (or yellow) of the vehicle's approach,
+  for arrivals within that green, which is what the RSU plans with.
 
 ## Related repositories
 

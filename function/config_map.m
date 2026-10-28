@@ -1,13 +1,7 @@
-function [script, label] = config_map(name)
-%CONFIG_MAP  Configuration short name -> main script and results label.
-switch name
-    case 'C1',      script = 'main_human_driving_plot'; label = 'C1_human';
-    case 'V2V_IDM', script = 'main_v2v_idm';            label = 'V2V_IDM';
-    case 'V2V_MPC', script = 'main_v2v_mpc';            label = 'V2V_MPC';
-    case 'C2',      script = 'main_v2v_idm_rsu';        label = 'C2_idm_rsu';
-    case 'C2G',     script = 'main_v2v_idm_rsu_gpr';    label = 'C2G_idm_rsu_gpr';
-    case 'C3I',     script = 'main_v2v_mpc_rsu';        label = 'C3I_mpc_rsu';
-    case 'C3',      script = 'main_v2v_mpc_rsu_gpr';    label = 'C3_mpc_rsu_gpr';
-    otherwise, error('config_map: unknown configuration %s', name);
-end
+function [label, cfg] = config_map(name)
+%CONFIG_MAP  Configuration short name -> results label (see sim/sim_config.m).
+%   Names: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC,
+%   C4_NOONLINE, C4_SPEED
+cfg = sim_config(name);
+label = cfg.label;
 end

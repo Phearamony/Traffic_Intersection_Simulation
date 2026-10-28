@@ -8,8 +8,8 @@ function run_sweeps(studies, seeds)
 %
 %   Studies (function/sweep_definitions.m): demand, rtshare, latency, loss,
 %   penetration, driver, asym. For every point and seed the traffic
-%   schedule is generated once (main_human_driving with ABL_SCHED_ONLY) and
-%   shared by the configurations of that point.
+%   traffic is drawn from the same seed inside every run, so all
+%   configurations of a point share it.
 %
 %   Seeds 201-210 are disjoint from the GPR training/test seeds (1-20) and
 %   from the main ablation (101-120).
@@ -31,9 +31,7 @@ if nargin < 1 || isempty(studies), studies = fieldnames(D)'; end
 if ischar(studies) || isstring(studies), studies = cellstr(studies); end
 
 root = fileparts(fileparts(mfilename('fullpath')));
-addpath(genpath(fullfile(root, 'class')));
-addpath(genpath(fullfile(root, 'function')));
-addpath(genpath(fullfile(root, 'simplot')));
+addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
 out = fullfile(root, 'output', 'sweeps');
 if ~exist(out, 'dir'), mkdir(out); end
 runs_csv = fullfile(out, 'sweep_runs.csv');
@@ -75,7 +73,7 @@ for st = studies
         for s = seeds
             todo = {};
             for c = 1:numel(cfgs)
-                [~, lab] = config_map(cfgs{c});
+                lab = config_map(cfgs{c});
                 if ~isKey(doneRuns, key(name, ptxt, s, lab)), todo{end+1} = cfgs{c}; end %#ok<AGROW>
             end
             needEst = doEst && ~isKey(doneEst, key(name, ptxt, s, ''));
@@ -83,28 +81,22 @@ for st = studies
             if isempty(todo) && ~needEst, continue; end
 
             setPoint(d, name, pv, ptxt, isRef, s, runs_csv, est_csv);
+            S = abl_settings();
 
-            % 1. traffic schedule for this point and seed
-            setenv('ABL_SCHED_ONLY', '1');
-            ok = runOne(fullfile(root, 'main', 'main_human_driving.m'), log_path, name, ptxt, s, 'schedule');
-            setenv('ABL_SCHED_ONLY', '');
-            close all force;
-            if ~ok, continue; end
-
-            % 2. configurations
+            % configurations (the traffic of this point and seed is drawn
+            % inside every run from the same seed, so it is shared)
             for c = 1:numel(todo)
                 k_run = k_run + 1;
-                scr = config_map(todo{c});
                 fprintf('\n##### [%d/%d] %s = %s | seed %d | %s  (%.1f h elapsed) #####\n', ...
                         k_run, total, name, ptxt, s, todo{c}, toc(t_all) / 3600);
-                runOne(fullfile(root, 'main', [scr '.m']), log_path, name, ptxt, s, todo{c});
+                runOne(@() sim_main(todo{c}, S), log_path, name, ptxt, s, todo{c});
                 close all force;
             end
-            % 3. estimator comparison
+            % estimator comparison
             if needEst
                 k_run = k_run + 1;
                 fprintf('\n##### [%d/%d] %s = %s | seed %d | estimator #####\n', k_run, total, name, ptxt, s);
-                runOne(fullfile(root, 'main', 'main_estimator_compare.m'), log_path, name, ptxt, s, 'estimator');
+                runOne(@() est_eval_run(S), log_path, name, ptxt, s, 'estimator');
                 close all force;
             end
         end
@@ -118,7 +110,7 @@ end
 % ---------------------------------------------------------------------
 function setPoint(d, name, pv, ptxt, isRef, s, runs_csv, est_csv)
 abl_env_reset();
-setenv('ABL_BATCH', '1');  setenv('ABL_PLOT', '0');  setenv('ABL_LIVE', '0');
+setenv('ABL_PLOT', '0');  setenv('ABL_LIVE', '0');
 setenv('ABL_NOLOG', '0');  setenv('ABL_KKMAX', '720');
 setenv('ABL_SEED', num2str(s));
 setenv('ABL_CSV', runs_csv);  setenv('ABL_EST_CSV', est_csv);
@@ -131,10 +123,10 @@ if ~isRef
 end
 end
 
-function ok = runOne(script_path, log_path, name, ptxt, s, what)
+function ok = runOne(fn, log_path, name, ptxt, s, what)
 ok = true;
 try
-    runIsolated(script_path);
+    fn();
 catch err
     ok = false;
     fprintf(2, 'FAILED %s=%s seed %d %s: %s\n', name, ptxt, s, what, err.message);
@@ -146,10 +138,6 @@ catch err
 end
 end
 
-function runIsolated(script_path)
-run(script_path);
-end
-
 function k = key(study, point, seed, label)
 k = sprintf('%s|%s|%d|%s', study, point, seed, label);
 end
@@ -159,6 +147,9 @@ M = containers.Map('KeyType', 'char', 'ValueType', 'logical');
 if ~exist(csv_path, 'file'), return; end
 opts = detectImportOptions(csv_path, 'Delimiter', ',');
 if ~ismember('study', opts.VariableNames), return; end
+% files written by the earlier code have other columns: nothing counts as done
+need = 'n_collision'; if ~withLabel, need = 'cov90_pct'; end
+if ~ismember(need, opts.VariableNames), return; end
 txt = intersect({'study', 'point', 'label'}, opts.VariableNames);
 opts = setvartype(opts, txt, 'string');
 T = readtable(csv_path, opts);
