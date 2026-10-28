@@ -12,3 +12,4 @@ desktop.ini
 
 # run logs (results CSVs and figures are kept)
 output/ablation_errors.log
+output/run_all_log.txt
