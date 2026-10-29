@@ -37,8 +37,9 @@ function M = metrics_compute(R)
 %                                             arrive later; extra delay asked
 %                                             (last target minus natural arrival)
 %     shape_decel                             strongest deceleration of a shaped
-%                                             vehicle from its first command to
-%                                             its stop line [m/s2, positive]
+%                                             vehicle while its command is active,
+%                                             more than 20 m before its stop line
+%                                             [m/s2, positive]
 %
 %   PET: for every right turn and every opposing vehicle sharing a conflict
 %   zone with it, each vehicle occupies the zone from the moment its front
@@ -144,13 +145,15 @@ if isfield(R, 'est') && isfield(R.est, 'shp') && ~isempty(R.est.shp.id)
     sh = R.est.shp;
     dly = sh.tgt - sh.nat;
     k = dly >= 0.3;                              % asked to arrive later (not only held)
-    sh.id = sh.id(k); sh.t0 = sh.t0(k); dly = dly(k);
+    sh.id = sh.id(k); sh.t0 = sh.t0(k); sh.tgt = sh.tgt(k); dly = dly(k);
     M.n_shaped = numel(sh.id);
     if M.n_shaped > 0, M.shape_mean_s = mean(dly); M.shape_max_s = max(dly); end
     dec = 0;
     sStop = G.C.L_APP - G.C.STOP;
     for k = 1:numel(sh.id)
-        m = LOG(:, 2) == sh.id(k) & LOG(:, 1) >= sh.t0(k) & LOG(:, 3) < sStop;
+        % while the command is active, away from the stop line (braking for a
+        % queue or a red light near the line is not caused by the shaping)
+        m = LOG(:, 2) == sh.id(k) & LOG(:, 1) >= sh.t0(k) & LOG(:, 1) <= sh.tgt(k) & LOG(:, 3) < sStop - 20;
         if any(m), dec = max(dec, -min(LOG(m, 5))); end
     end
     M.shape_decel = dec;

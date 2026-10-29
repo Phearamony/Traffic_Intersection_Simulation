@@ -22,19 +22,29 @@ behind it waits too.
 
 ## The method (v2)
 
-A Road Side Unit (RSU) receives the state of every connected vehicle over V2X and plans a slot for each
-right-turner in the oncoming stream.
+A Road Side Unit (RSU) receives the state of every connected vehicle over V2X and plans, for both
+approaches together, when each waiting right-turner turns and which oncoming CAVs should arrive a little
+later to make that possible. Human drivers have no V2X: the RSU can neither see nor instruct them.
 
 1. **Physics-informed GPR (PI-GPR) arrival-time estimator.** The prior is the IDM forward simulation of
    the queue (the conference estimator); a sparse Gaussian process learns its error from
-   `[d, v, gap, signal timing, vehicles ahead, speed ahead, right-turners ahead, prior]`. It gives a
-   prediction and its uncertainty, and keeps learning online from every arrival the RSU observes.
-2. **Uncertainty-aware slot search.** The conference slot search (insert the turner before oncoming
-   vehicle *p*, minimize the summed squared delay, exhaustive over *p*), with safety margins computed from
-   the real conflict-zone geometry plus a post-encroachment margin plus `z * sqrt(sigma_turner^2 + sigma_oncoming^2)`.
+   `[d, v, gap, signal timing, vehicles ahead, speed ahead, right-turners ahead, prior]`. Its uncertainty
+   grows with the time to arrival (`sigma = sqrt(GP variance + (c1 tau)^2)`, fitted on the training data),
+   and it keeps learning online from every arrival the RSU observes.
+2. **Joint gap-shaping slot optimizer** (`sim/rsu_plan.m`). Every waiting turner (up to two per lane, both
+   approaches) gets a slot in the oncoming stream. Safety margins come from the conflict-zone geometry, a
+   post-encroachment margin and `z * sigma` of the vehicles the RSU does not control. The right-turner
+   always yields (Road Traffic Act, art. 37): its on-board check only lets it turn into a gap that exists.
+   To make a gap, the RSU may ask oncoming CAVs to arrive a little later, within legal and comfort limits
+   (at most 2 s, never below 0.7 of their speed, about 1 m/s^2, no new command within 40 m of the stop
+   line). The optimizer picks the joint assignment with the smallest total squared delay of all vehicles,
+   so it can, for example, let the east and west turners go together (mutual right turns do not conflict)
+   or give two turners of one lane the same gap. Baselines with the same limits: existing gaps only,
+   earliest slot per turner (greedy), first come first served.
 3. **Arrival-time MPC.** The RSU sends target arrival times (not speeds). Each CAV solves a QP-MPC with a
    10 s horizon, jerk penalty, curve speed limits, signal timing, and the constraint "do not reach this
-   point before the target time". A right-turner with a slot rolls through the turn without stopping.
+   point before the target time". A right-turner with a slot rolls through the turn without stopping, and
+   a held oncoming CAV cannot arrive early, so the RSU needs smaller margins for the vehicles it commands.
 
 All vehicles drive along real lane paths (straight, left arc, right arc), so turns are continuous and the
 safety measure is the post-encroachment time (PET) at the conflict zones.
@@ -74,13 +84,13 @@ archive/      v1 code of the conference paper and older files (see archive/READM
 | C2G | `main_v2v_idm_rsu_gpr.m` | IDM | RSU slots | GPR | speed |
 | C3I | `main_v2v_mpc_rsu.m` | MPC | RSU slots | IDM forward sim. | speed |
 | C3 | `main_v2v_mpc_rsu_gpr.m` | MPC | RSU slots | GPR | speed (conference method) |
-| **C4** | `main_proposed.m` | **MPC** | **RSU slots + uncertainty margins** | **PI-GPR, online** | **arrival time** |
+| **C4** | `main_proposed.m` | **MPC** | **RSU joint slot optimizer + gap shaping + uncertainty margins** | **PI-GPR, online** | **arrival time** |
 | C4_NOUNC | | as C4, fixed margins | | | |
 | C4_NOONLINE | | as C4, no online learning | | | |
 | C4_SPEED | | as C4, speed messages | | | |
 | C4_STRICT | | as C4, existing gaps only (no oncoming CAV is asked to slow) | | | |
-| C4_GREEDY | | as C4, slot rule: earliest slot for the turner | | | |
-| C4_FCFS | | as C4, slot rule: first come, first served | | | |
+| C4_GREEDY | | as C4, slot rule: turners in arrival order, each its earliest slot | | | |
+| C4_FCFS | | as C4, slot rule: turners in arrival order, first come first served | | | |
 
 Right-turn priority: every configuration follows the Road Traffic Act (art. 37). The right-turner yields:
 its on-board check only lets it turn into a gap that exists. The RSU may make such a gap by asking oncoming

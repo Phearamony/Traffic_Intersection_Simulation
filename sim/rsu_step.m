@@ -5,8 +5,7 @@ function [rsu, msgs] = rsu_step(rsu, t, sig, sigT, G, cfg)
 %   vehicle before its stop line are stored. When the vehicle later crosses
 %   (rsu_crossed) the true arrival time becomes a training sample, an
 %   evaluation sample, or an online update of the PI-GPR.
-%   Planning (configurations with an RSU): rsu_plan for every approach that
-%   has a right-turner.
+%   Planning (configurations with an RSU): rsu_plan, both approaches jointly.
 msgs = struct('id', {}, 'vadv', {}, 'tgt', {}, 'spt', {}, 'go', {});
 W = rsu_view(rsu, t);
 snap = abs(t / rsu.snap_every - round(t / rsu.snap_every)) < 1e-9;
@@ -41,9 +40,6 @@ if snap && learn && ~isempty(W.ids)
     end
 end
 if rsu.plan
-    for a = 1:numel(apps)
-        [rsu, m] = rsu_plan(rsu, W, apps{a}, t, sig, sigT, G, cfg);
-        msgs = [msgs, m]; %#ok<AGROW>
-    end
+    [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg);     % both approaches together
 end
 end
