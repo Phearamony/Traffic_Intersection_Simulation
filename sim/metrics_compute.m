@@ -33,7 +33,7 @@ function M = metrics_compute(R)
 %     stops_per_veh                           stops per complete trip
 %     qp_solves, qp_fail_pct, guard           MPC solves / share without a
 %                                             solution; no-overlap corrections
-%     n_shaped, shape_mean_s, shape_max_s     oncoming CAVs the RSU asked to
+%     n_shaped, shape_mean_s, shape_max_s     oncoming CAVs the RSU asked to (by 0.3 s or more)
 %                                             arrive later; extra delay asked
 %                                             (last target minus natural arrival)
 %     shape_decel                             strongest deceleration of a shaped
@@ -143,7 +143,10 @@ M.n_shaped = 0; M.shape_mean_s = NaN; M.shape_max_s = NaN; M.shape_decel = NaN;
 if isfield(R, 'est') && isfield(R.est, 'shp') && ~isempty(R.est.shp.id)
     sh = R.est.shp;
     dly = sh.tgt - sh.nat;
-    M.n_shaped = numel(sh.id); M.shape_mean_s = mean(dly); M.shape_max_s = max(dly);
+    k = dly >= 0.3;                              % asked to arrive later (not only held)
+    sh.id = sh.id(k); sh.t0 = sh.t0(k); dly = dly(k);
+    M.n_shaped = numel(sh.id);
+    if M.n_shaped > 0, M.shape_mean_s = mean(dly); M.shape_max_s = max(dly); end
     dec = 0;
     sStop = G.C.L_APP - G.C.STOP;
     for k = 1:numel(sh.id)

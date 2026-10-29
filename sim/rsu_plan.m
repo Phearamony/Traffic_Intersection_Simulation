@@ -30,6 +30,12 @@ function [rsu, msgs] = rsu_plan(rsu, W, a, t, sig, sigT, G, cfg)
 %   drivers and vehicles past the stop line cannot be asked (hi = lo), but a
 %   vehicle behind a slowed one follows it (tau_m >= tau_{m-1} + h_min). A
 %   given target is never taken back (lo_m >= that target).
+%   Commanded vehicles (arrival-time MPC configurations): the turner leaves
+%   at its go time and a held oncoming CAV cannot reach its stop line before
+%   its target, so in their margins the prediction sigma is replaced by the
+%   tracking accuracy s_ctl = 0.3 s. An oncoming CAV may also be held at its
+%   natural time (no delay) only to remove that uncertainty; a vehicle
+%   behind a held one cannot be early either.
 %   Cost J(p) = w_onc sum (tau_m - nat_m)^2 + (tau_t - taubar_t)^2
 %               + sum over the turner's followers (tau_f - taubar_f)^2.
 %   Rules (cfg.slot):
@@ -112,7 +118,14 @@ d_o = [zeros(1, numel(oo)), Fo.d];
 M = numel(tbar);
 use = isfinite(tbar);
 
-Db = zeros(1, M); Da = zeros(1, M); cons = false(1, M);
+% Vehicles the RSU commands with an arrival time (arrival-time MPC) are
+% not uncertain in the risky direction: the turner leaves at its go time,
+% and a held oncoming CAV cannot reach its stop line before its target.
+% Their prediction sigma is replaced by the tracking accuracy s_ctl.
+ctl = strcmp(cfg.msg, 'time') && strcmp(cfg.ctrl, 'mpc');
+s_ctl = 0.3;
+sig_te = sig_t; if ctl, sig_te = s_ctl; end
+Db = zeros(1, M); Da = zeros(1, M); DaC = zeros(1, M); cons = false(1, M);
 for m = 1:M
     qz = rowFor(rows, G, o, movo(m));
     if isempty(qz) || ~use(m), continue; end
@@ -124,9 +137,10 @@ for m = 1:M
     % whole turn, which also includes the merge with oncoming left-turners)
     dent_m = travel_time(qz(2) - P.s_wait, v_t0, 1.5, vt);
     tclr_m = travel_time(qz(3) + L - P.s_wait, v_t0, 1.5, vt);
-    u = z * sqrt(sig_t^2 + sgm(m)^2);
+    u = z * sqrt(sig_te^2 + sgm(m)^2);
     Db(m) = dexit - dent_m + rsu.pet + u;
     Da(m) = tclr_m - dent + rsu.pet + u;
+    DaC(m) = tclr_m - dent + rsu.pet + z * sqrt(sig_te^2 + s_ctl^2);   % if held
 end
 
 % ---- shaping limits of every oncoming vehicle ----
@@ -157,6 +171,8 @@ for m = 2:M                                    % keep the order in the lane
     if use(m) && use(m-1) && ~fixed(m), lo(m) = max(lo(m), lo(m-1) + rsu.h_min); end
 end
 hi = max(hi, lo);
+% which oncoming vehicles may be held (at least until their natural time)
+holdable = ctl & cav_o & ~fixed & use & movo ~= 'R' & ~strcmp(cfg.slot, 'strict');
 
 % ---- slot search: the turner before oncoming vehicle p, p = 1..M+1 ----
 best = inf; bp = 0; btt = inf; cand = zeros(0, 3);
@@ -165,18 +181,25 @@ for p = 1:M+1
     for m = 1:min(p-1, M)
         if cons(m), tt = max(tt, lo(m) + Db(m)); end
     end
-    tau = lo; ok = true; prev = -inf;
+    tau = lo; ok = true; prev = -inf; prevHeld = false; held = false(1, M);
     for m = 1:M
         if ~use(m), continue; end
         if m < p, prev = tau(m); continue; end
-        need = lo(m);
-        if cons(m), need = max(need, tt + Da(m)); end
         pushed = max(lo(m), prev + rsu.h_min);        % car following behind a slowed car
-        if need > hi(m) + 0.01 && pushed < need - 0.01
+        if ~cons(m) || lo(m) >= tt + Da(m) - 0.01
+            tau(m) = pushed;                          % no conflict, or the gap is there anyway
+        elseif prevHeld && pushed >= tt + DaC(m) - 0.01
+            tau(m) = pushed;                          % behind a held vehicle: cannot be early
+        elseif holdable(m) && max(lo(m), tt + DaC(m)) <= hi(m) + 0.01
+            tau(m) = max([lo(m), tt + DaC(m), pushed]);
+            held(m) = true;                           % commanded: held until tau
+        elseif pushed >= tt + Da(m) - 0.01
+            tau(m) = pushed;
+        else
             ok = false; break;                        % would need more than allowed
         end
-        tau(m) = max(need, pushed);
         if fixed(m) && tau(m) > lo(m) + 0.01, ok = false; break; end
+        prevHeld = held(m) || (prevHeld && tau(m) <= prev + rsu.h_min + 0.01);
         prev = tau(m);
     end
     if ~ok, continue; end
@@ -192,7 +215,7 @@ for p = 1:M+1
             p0 = 1 + sum(nat(use) < tbar_t);          % arrival order
             keep = p >= p0 && bp == 0;                % first feasible slot from there
     end
-    if keep, best = J; bp = p; btau = tau; btt = tt; end
+    if keep, best = J; bp = p; btau = tau; btt = tt; bheld = held; end
 end
 if bp == 0, return; end
 rsu.plans = rsu.plans + 1;
@@ -211,12 +234,12 @@ for m = 1:M
     % a command only within the vehicle's own limit; a vehicle pushed further
     % by the slowed vehicle ahead of it just follows it (no command)
     btau(m) = min(btau(m), hi(m));
-    if btau(m) - lo(m) >= 0.3 || held
+    if bheld(m) || btau(m) - lo(m) >= 0.3 || held
         if isempty(k)
             rsu.shp.id(end+1) = ids_o(m); rsu.shp.nat(end+1) = t + nat(m);
             rsu.shp.tgt(end+1) = t + btau(m); rsu.shp.t0(end+1) = t;
         else
-            rsu.shp.tgt(k) = max(rsu.shp.tgt(k), t + btau(m));
+            rsu.shp.tgt(k) = max(rsu.shp.tgt(k), min(t + btau(m), rsu.shp.nat(k) + rsu.dmax));
         end
         tg = t + btau(m);
         if ~strcmp(cfg.msg, 'time'), tg = NaN; end     % speed advice only: no binding time
