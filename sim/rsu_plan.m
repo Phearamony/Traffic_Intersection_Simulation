@@ -335,7 +335,11 @@ for ai = 1:2
         ok = false; return;
     end
     m = ~e.fixed;
-    J = J + sum((x(m) - e.nat(m)).^2);
+    if strcmp(getenv('ABL_OBJ'), 'lin')               % diagnostic: linear total delay
+        J = J + sum(x(m) - e.nat(m));
+    else
+        J = J + sum((x(m) - e.nat(m)).^2);
+    end
 end
 end
 
