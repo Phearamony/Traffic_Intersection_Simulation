@@ -4,7 +4,7 @@ function M = gp_calibrate(M, s2, tau, r)
 %   s2   GP predictive variances, tau predicted times to arrival,
 %   r    residuals (actual minus predicted) on calibration data.
 %   Maximum likelihood for r ~ N(0, var_latent + (c0 + c1 tau)^2) over
-%   c0 > 0, c1 >= 0 (fminsearch on log-parameters).
+%   c0 > 0, c1 > 0 (fminsearch on log-parameters, so both stay positive).
 lat = max(s2(:) - (M.sn * M.ys)^2, 0); tau = max(tau(:), 0); r = r(:);
 ok = isfinite(lat) & isfinite(tau) & isfinite(r);
 lat = lat(ok); tau = tau(ok); r = r(ok);

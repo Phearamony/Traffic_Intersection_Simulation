@@ -5,7 +5,8 @@ function M = gp_update(M, X, y, lambda)
 %                                   data are down-weighted by lambda first
 %   With DTC the posterior depends on the data only through
 %       A = Kmm + sn^-2 sum_i k_m(x_i) k_m(x_i)',   b = sn^-2 sum_i k_m(x_i) y_i
-%   so an observation is added by a rank-one update of A and b.
+%   so observations are added by a low-rank update of A and b (one rank-one
+%   term per observation; the forgetting factor is applied once per call).
 if nargin < 4, lambda = 1; end
 if isempty(X), return; end
 Xn = (X - M.xm) ./ M.xs;

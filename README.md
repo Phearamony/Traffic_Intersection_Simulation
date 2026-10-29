@@ -37,7 +37,7 @@ that possible. Human drivers have no V2X: the RSU can neither see nor instruct t
 1. **Physics-informed GPR (PI-GPR) arrival-time estimator.** The prior is the IDM forward simulation of
    the queue (the estimator of [5]); a sparse Gaussian process learns its error from
    `[d, v, gap, signal timing, vehicles ahead, speed ahead, right-turners ahead, prior]`. Its uncertainty
-   grows with the time to arrival (`sigma = sqrt(GP variance + (c1 tau)^2)`, fitted on the training data),
+   grows with the time to arrival (`sigma = sqrt(latent GP variance + (c0 + c1 tau)^2)`, c0 and c1 fitted on the training data),
    and it keeps learning online from every arrival the RSU observes.
 2. **Joint gap-shaping slot optimizer** (`sim/rsu_plan.m`). The slot search of [5] (insert the turner
    before oncoming vehicle *p*), extended to every waiting turner of both approaches at once. For each

@@ -85,7 +85,11 @@ if isfinite(gap)
         dl = vl * min(tt, tstop) + 0.5 * al * min(tt, tstop).^2;
     else
         al_ = min(max(al, 0), 1.5);
+        vcap = max(vl, C.V_LIM);                  % the vehicle ahead stops accelerating at the limit
+        tc = (vcap - vl) / max(al_, 1e-6);
         dl = vl * tt + 0.5 * al_ * tt.^2;
+        late = tt > tc;
+        dl(late) = vl * tc + 0.5 * al_ * tc^2 + vcap * (tt(late) - tc);
     end
     A = [A; Ss + Tc * Sv];
     b = [b; s + gap + dl - s0c - (s + tt * v) - Tc * v];

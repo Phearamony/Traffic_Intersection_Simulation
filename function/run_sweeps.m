@@ -7,7 +7,7 @@ function run_sweeps(studies, seeds)
 %   run_sweeps([], 201:205)             % fewer seeds (quick check)
 %
 %   Studies (function/sweep_definitions.m): demand, rtshare, latency, loss,
-%   penetration, driver, asym. For every point and seed the traffic
+%   penetration, dmax, driver, asym. For every point and seed the traffic
 %   traffic is drawn from the same seed inside every run, so all
 %   configurations of a point share it.
 %

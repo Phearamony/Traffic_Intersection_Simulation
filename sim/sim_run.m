@@ -77,7 +77,9 @@ LOG = zeros(KKmax * 80, 7); nlog = 0;
 hfig = [];
 
 for KK = 1:KKmax
-    t = KK * dt;
+    % decisions use the state at time t; integration moves it to t1 = t + dt,
+    % which is what the log, the crossing times and the animation show
+    t = (KK - 1) * dt; t1 = t + dt;
     sig = struct(); sigT = struct();
     for a = 1:numel(apps)
         [st, tg0, tend] = signal_info(t, apps{a}, C);
@@ -303,7 +305,7 @@ for KK = 1:KKmax
                     s_new(i) = max(s_old(i), s_new(i) - (0.3 - wi.gap));
                     v_new(i) = min(v_new(i), v_new(j));
                     count.guard = count.guard + 1;
-                    count.guard_log(end+1, :) = [t, V(i).id, V(j).id, wi.gap];
+                    count.guard_log(end+1, :) = [t1, V(i).id, V(j).id, wi.gap];
                 end
             end
         end
@@ -338,11 +340,11 @@ for KK = 1:KKmax
             V(i).stopped = false;
         end
         if isnan(V(i).t_stop) && s_old(i) < P.s_stop && s_new(i) >= P.s_stop
-            V(i).t_stop = t - dt + dt * (P.s_stop - s_old(i)) / max(s_new(i) - s_old(i), 1e-9);
+            V(i).t_stop = t + dt * (P.s_stop - s_old(i)) / max(s_new(i) - s_old(i), 1e-9);
             if ~isempty(rsu), rsu = rsu_crossed(rsu, V(i), V(i).t_stop, cfg); end
         end
         if s_new(i) >= P.len
-            V(i).t_exit = t - dt + dt * (P.len - s_old(i)) / max(s_new(i) - s_old(i), 1e-9);
+            V(i).t_exit = t + dt * (P.len - s_old(i)) / max(s_new(i) - s_old(i), 1e-9);
             V(i).exited = true;
             keep(i) = false;
         end
@@ -350,14 +352,14 @@ for KK = 1:KKmax
 
     % ---- 9. log ----
     if nlog + n > size(LOG, 1), LOG = [LOG; zeros(size(LOG))]; end %#ok<AGROW>
-    LOG(nlog+1:nlog+n, :) = [t * ones(n, 1), [V.id]', [V.s]', [V.v]', [V.a]', [V.p]', [V.isCAV]'];
+    LOG(nlog+1:nlog+n, :) = [t1 * ones(n, 1), [V.id]', [V.s]', [V.v]', [V.a]', [V.p]', [V.isCAV]'];
     nlog = nlog + n;
     if opts.live
-        hfig = draw_intersection(V, G, t, sig, rsu, hfig, opts.view);
+        hfig = draw_intersection(V, G, t1, sig, rsu, hfig, opts.view);
     end
-    if any(abs(opts.frames - t) < 1e-9)
-        hfig = draw_intersection(V, G, t, sig, rsu, hfig, opts.view);
-        print(hfig, fullfile(opts.frame_dir, sprintf('frame_%s_%05.1f.png', cfg.name, t)), '-dpng', '-r90');
+    if any(abs(opts.frames - t1) < 1e-9)
+        hfig = draw_intersection(V, G, t1, sig, rsu, hfig, opts.view);
+        print(hfig, fullfile(opts.frame_dir, sprintf('frame_%s_%05.1f.png', cfg.name, t1)), '-dpng', '-r90');
     end
 
     DONE = [DONE, V(~keep)]; %#ok<AGROW>

@@ -27,7 +27,9 @@ function S = abl_settings()
 %   ABL_DRIVER      'nominal' (default), 'aggressive', 'cautious'
 %
 %   --- V2X and fleet ---
-%   ABL_LAT         one-way V2X latency [s]                             (default 0)
+%   ABL_LAT         one-way V2X latency [s]; the RSU extrapolates a received
+%                   state at its speed, and downlink messages arrive after the
+%                   latency rounded up to whole 0.5 s steps          (default 0)
 %   ABL_LOSS        packet loss probability per message and direction   (default 0)
 %   ABL_PEN         CAV penetration rate, 0 to 1                        (default 1)
 %   ABL_DMAX        largest extra delay the RSU may ask of one oncoming

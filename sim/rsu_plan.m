@@ -27,7 +27,7 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %     from the path geometry. A turner commanded with an arrival time
 %     (arrival-time MPC) leaves at its go time, and an oncoming CAV held by
 %     a target cannot be early: in their margins sigma is replaced by the
-%     tracking accuracy s_ctl = 0.3 s (DaC). A held vehicle also makes the
+%     tracking accuracy s_ctl = 0.5 s (DaC). A held vehicle also makes the
 %     vehicle behind it unable to be early.
 %     Two turners of the same lane take their slots in lane order.
 %     All constraints only push times later, so the times of a slot
@@ -40,7 +40,7 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %     gentle_m: the delay of slowing to no less than v_frac of its speed,
 %     decelerating at most a_shape, over half of its distance d_m; no new
 %     command once d_m < d_cmd or the vehicle is queued (v < 5 m/s). It may
-%     also be held at its natural time (no delay). With cfg.adv a CAV
+%     also be held at its natural time (no delay; allowed at any distance). With cfg.adv a CAV
 %     before a slot may also be asked to arrive earlier, down to
 %       lo_adv_m = lo_m - min(adv_max, d_m / v_m - t_fast_m)
 %     t_fast_m: its time to the stop line accelerating at 1 m/s^2 up to the
@@ -91,7 +91,7 @@ strict = strcmp(cfg.slot, 'strict');
 once = strcmp(cfg.plan, 'once');
 fixedM = strcmp(cfg.margin, 'fixed');
 adv = cfg.adv && ~strict;
-s_ctl = 0.3; K = 2;
+s_ctl = 0.5; K = 2;                % s_ctl: one control step (the MPC holds on a 0.5 s grid)
 if once
     % plan at the start of each east-west green and when a new turner comes
     % into range; in between, repeat the same commands (no replanning)
@@ -101,11 +101,11 @@ if once
     end
     if isempty(W.ids), return; end
     turners = W.ids(W.mov == 'R' & ~W.committed & W.s >= sStop - 120 & W.s <= sStop + 8);
+    turners = turners(:)';
     if rsu.once_tg0 == tg0 && all(ismember(turners, rsu.once_ids))
         msgs = rsu.once_msgs; return;
     end
     rsu.once_tg0 = tg0; rsu.once_msgs = msgs;
-    rsu.once_ids = unique([rsu.once_ids, turners]);
     K = 50;                                        % every turner known now
 end
 if isempty(W.ids), return; end
@@ -206,6 +206,9 @@ for ai = 1:2
             qz = rowFor(rows, G, o, f.mov(m));
             if isempty(qz), continue; end
             vc = max(f.v(m), 6);
+            if f.mov(m) == 'L'                     % an oncoming left-turner is on its arc
+                PL = G.P(G.idx.([o 'L'])); vc = min(max(f.v(m), 3), min(PL.vcurve(PL.kappa > 0)));
+            end
             dent = (qz(4) - sStop) / vc;
             dexit = (qz(5) + L - sStop) / vc;
             dent_k = travel_time(qz(2) - P.s_wait, v_t0, 1.5, vt);
@@ -223,6 +226,7 @@ for ai = 1:2
     end
 end
 nT = numel(T);
+if once, rsu.once_ids = unique([rsu.once_ids, [T.id]]); end   % planned in this green
 if nT == 0, return; end
 
 % ---------------- 3. slot search ----------------
@@ -242,6 +246,10 @@ switch cfg.slot
     case {'opt', 'strict'}
         bestJ = inf;
         sizes = cellfun(@numel, S);
+        if prod(sizes) > 5000                       % too many combinations: successive
+            sl = seqSlots(Ln, T, S, nat_k, h, adv, rsu.w_adv);
+            sizes = ones(1, nT); S = num2cell(sl);
+        end
         idx = ones(1, nT);
         while true
             sl = arrayfun(@(k) S{k}(idx(k)), 1:nT);
@@ -261,6 +269,17 @@ switch cfg.slot
 end
 if isempty(best), return; end
 rsu.plans = rsu.plans + 1;
+% a turner that cannot clear before the yellow ends gets no slot this green;
+% nothing is shaped, pulled or held for it
+noslot = false(1, nT);
+for k = 1:nT
+    noslot(k) = best.tau{T(k).ai}(T(k).i) + T(k).tclr > T(k).tend;
+end
+if any(noslot)
+    sl2 = best.sl; sl2(noslot) = 0;
+    [ok2, R2] = evalBest(Ln, T, sl2, h, adv, rsu.w_adv);
+    if ok2, R2.sl = sl2; best = R2; end
+end
 % diagnostics: how often the joint optimizer chooses differently from the
 % successive slot search of [5] (same limits)
 if strcmp(cfg.slot, 'opt')
@@ -275,7 +294,7 @@ end
 for k = 1:nT
     e = Ln{T(k).ai}; i = T(k).i;
     tk = best.tau{T(k).ai}(i);
-    if tk + T(k).tclr > T(k).tend
+    if noslot(k)
         rsu.noslot = rsu.noslot + 1;              % no slot in this green
         continue;
     end
@@ -371,7 +390,7 @@ if pull
         bi = 3 - T(k).ai; c = T(k).cidx;
         for j = 1:min(sl(k) - 1, numel(c))
             m = c(j);
-            if Ln{bi}.lo_adv(m) < tau{bi}(m) - 1e-9
+            if Ln{bi}.lo_adv(m) < tau{bi}(m) - 0.3      % only worth a message from 0.3 s
                 tau{bi}(m) = Ln{bi}.lo_adv(m); pulled{bi}(m) = true;
             end
         end

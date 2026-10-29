@@ -15,7 +15,7 @@ function F = est_features(view, app, t, G, theta)
 %             time until green (< 0)
 %     n       vehicles ahead that still have to pass (before the stop line,
 %             or waiting in the junction)
-%     vl      speed of the vehicle ahead (25 if none)
+%     vl      speed of the vehicle ahead (the speed limit C.V_LIM if none)
 %     nR      right-turners ahead that have not turned yet (a waiting
 %             right-turner blocks the single lane)
 %     tphys   queue-discharge physics estimate (est_phys)

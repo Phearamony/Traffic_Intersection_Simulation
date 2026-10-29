@@ -11,7 +11,8 @@ function M = gp_fit(X, y, opts)
 %   Inputs and targets are standardised. Kernel (ARD squared exponential)
 %       k(x, x') = sf^2 exp(-1/2 sum_d (x_d - x'_d)^2 / l_d^2)
 %   Hyperparameters [log l_1..l_D, log sf, log sn] maximize the exact
-%   marginal likelihood on a random subset of n_opt points (analytic
+%   marginal likelihood plus a weak prior on the log length scales (a MAP
+%   estimate) on a random subset of n_opt points (analytic
 %   gradient, fminunc). The full data then enter through the
 %   deterministic training conditional (DTC) on m inducing points Z:
 %       A = Kmm + sn^-2 Kmn Knm,      b = sn^-2 Kmn y

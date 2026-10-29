@@ -24,8 +24,8 @@ function plot_sweeps(out_dir)
 %                                           (first point; 'nominal' for drivers)
 %                              gap          mean gap wait > 120 s (one cycle)
 %                              spillback    mean blocked arrivals >= 1 per run
-%                              conflicts    mean number of turns with an oncoming
-%                                           gap < 2 s is at least 1 per run
+%                              conflicts    mean number of turns with PET < 1.5 s
+%                                           is at least 1 per run
 %                            NaN = never met in the swept range.
 
 root = fileparts(fileparts(mfilename('fullpath')));

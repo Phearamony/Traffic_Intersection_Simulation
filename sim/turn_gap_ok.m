@@ -92,7 +92,8 @@ for r = 1:size(rows, 1)
         if blocked
             % it yields to a turner in the junction (sim_run, step 6) if it
             % can still stop before the zone; otherwise it counts as usual
-            % (same test as the yielding rule in sim_run: 4 m/s^2, 0.5 m before the zone)
+            % (the yielding rule in sim_run uses 4 m/s^2 too and stops 0.5 m before
+            % the zone; this test asks for that 0.5 m as well, so it is slightly stricter)
             if (z0q - 0.5 - sj) >= vj^2 / (2 * 4.0), continue; end
             t_arr = max(t_arr, t_vac + travel_time(z0q - sj, vj, 2.0, max(V(j).Vd, 1)));
         end

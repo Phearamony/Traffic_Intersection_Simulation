@@ -30,7 +30,7 @@ function G = geom_build()
 %                 s_out (start of the exit line), w_out (its distance from
 %                 the center), out ('E','W','N','S' = exit road direction),
 %                 vcurve(s) speed limit from the lateral-acceleration limit,
-%                 s_wait (right turns: waiting point), s_ff (free-flow time)
+%                 s_wait (right turns: waiting point)
 %   G.idx.(name)  path index, e.g. G.idx.WR
 %   G.Z           conflict zones: struct array with fields p, q (paths),
 %                 zp = [z0 z1] on p, zq = [z0 z1] on q, type ('cross','merge')
