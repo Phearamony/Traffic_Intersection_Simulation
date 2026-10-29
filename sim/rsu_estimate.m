@@ -15,7 +15,8 @@ function [F, tau, sd] = rsu_estimate(rsu, W, app, t, G, kind)
 %   trained on arrivals within the current green) and its prior is used.
 %   F     features (est_features), vehicles closest first
 %   tau   predicted time until each vehicle reaches its stop line [s]
-%   sd    predictive standard deviation [s]
+%   sd    predictive standard deviation [s]: the GP's own uncertainty plus
+%         a noise that grows with the time to arrival (gp_sd)
 %   A minimum headway h_min between consecutive predicted arrivals is
 %   enforced afterwards for every estimator (as in the conference method).
 
@@ -30,7 +31,7 @@ switch kind
         tau = F.tphys;
     case 'gpr'
         [mu, s2] = gp_predict(rsu.gpr, F.Z4);
-        tau = mu(:)'; sd = sqrt(s2(:))';
+        tau = mu(:)'; sd = gp_sd(rsu.gpr, s2, tau);
         [~, ~, tend] = signal_info(t, app, G.C);
         left = t + F.tphys > tend;              % left over (physics decides)
         tau(left) = F.tphys(left);
@@ -41,7 +42,7 @@ switch kind
         Z = [F.Zb, prior(:)];
         if strcmp(kind, 'pigpr'), Mg = rsu.pigpr; else, Mg = rsu.pigpr_on; end
         [mu, s2] = gp_predict(Mg, Z);
-        tau = prior + mu(:)'; sd = sqrt(s2(:))';
+        tau = prior + mu(:)'; sd = gp_sd(Mg, s2, tau);
         [~, ~, tend] = signal_info(t, app, G.C);
         left = t + prior > tend;
         tau(left) = prior(left);

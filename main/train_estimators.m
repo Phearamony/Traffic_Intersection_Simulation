@@ -80,9 +80,15 @@ o = struct('m', 400, 'n_opt', 1000, 'iter', 200, 'seed', 1);
 gpr = gp_fit(Z4(tr, :), y(tr), o);
 pigpr = gp_fit(Z8(tr, :), y(tr) - prior(tr), o);
 
+% ---- calibrate the uncertainty (noise that grows with the time to arrival) ----
+[mg, vg] = gp_predict(gpr, Z4);
+[mp, vp] = gp_predict(pigpr, Z8); mp = mp + prior;
+gpr = gp_calibrate(gpr, vg(tr), mg(tr), y(tr) - mg(tr));
+pigpr = gp_calibrate(pigpr, vp(tr), mp(tr), y(tr) - mp(tr));
+fprintf('[train_estimators] noise sd = %.2f + %.3f tau (GPR), %.2f + %.3f tau (PI-GPR)\n', gpr.cal, pigpr.cal);
+
 % ---- evaluate ----
-[mg, vg] = gp_predict(gpr, Z4);  sg = sqrt(vg);
-[mp, vp] = gp_predict(pigpr, Z8); mp = mp + prior; sp = sqrt(vp);
+sg = gp_sd(gpr, vg, mg)'; sp = gp_sd(pigpr, vp, mp)';
 names = {'idm', 'phys', 'gpr', 'pigpr'};
 preds = {X(:, 15), tphys, mg, mp};
 sds = {[], [], sg, sp};

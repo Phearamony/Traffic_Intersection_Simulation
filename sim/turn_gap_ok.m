@@ -2,9 +2,9 @@ function [ok, why] = turn_gap_ok(i, V, G, sig, mode, margin)
 %TURN_GAP_OK  Gap acceptance of right-turner i against the opposite approach.
 %
 %   ok = turn_gap_ok(i, V, G, sig, mode, margin)
-%   The turner needs t_clear seconds until its rear has left its conflict
-%   zone (from its current position and speed, accelerating at 1.5 m/s^2
-%   up to the arc speed). Every opposing straight or left-turning vehicle
+%   For each conflict zone (one per opposing movement) the turner needs
+%   t_clear seconds until its rear has left that zone (from its current
+%   position and speed, accelerating at 1.5 m/s^2 up to the arc speed). Every opposing straight or left-turning vehicle
 %   that has not yet cleared its own zone must reach that zone no earlier
 %   than t_clear + margin. A vehicle that will have left the zone at least
 %   PET_MIN before the turner enters it does not matter, and a vehicle that
@@ -31,9 +31,6 @@ ok = true;
 if isempty(rows), return; end
 P = G.P(k);
 vt = min(P.vcurve(P.kappa > 0));                 % arc speed
-z0k = min(rows(:, 2)); z1k = max(rows(:, 3));
-t_enter = travel_time(z0k - V(i).s, V(i).v, 1.5, vt);
-t_clear = travel_time(z1k + L - V(i).s, V(i).v, 1.5, vt);
 
 pk = [V.p];
 % an opposing right-turner standing in the junction (past its stop line,
@@ -52,6 +49,9 @@ if ~isempty(wt)
 end
 for r = 1:size(rows, 1)
     q = rows(r, 1); z0q = rows(r, 4); z1q = rows(r, 5);
+    % the turner's entry / clearing time of this conflict zone
+    t_enter = travel_time(rows(r, 2) - V(i).s, V(i).v, 1.5, vt);
+    t_clear = travel_time(rows(r, 3) + L - V(i).s, V(i).v, 1.5, vt);
     js = find(pk == q);
     [~, o] = sort([V(js).s], 'descend'); js = js(o);      % closest to the zone first
     tprev = -inf;

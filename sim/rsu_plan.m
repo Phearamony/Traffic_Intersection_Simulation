@@ -15,9 +15,10 @@ function [rsu, msgs] = rsu_plan(rsu, W, a, t, sig, sigT, G, cfg)
 %     Db_m = dexit_m - dent_t + PET + z sqrt(sigma_t^2 + sigma_m^2)
 %     Da_m = tclr_t  - dent_m + PET + z sqrt(sigma_t^2 + sigma_m^2)
 %   dent / dexit: time from the stop line (opposing vehicle) or waiting
-%   point (turner, starting from rest) until the vehicle front enters /
-%   its rear leaves the conflict zone, from the real path geometry;
-%   tclr_t: time until the turner's rear has left its zone.
+%   point (turner: rolling at curve speed when its arrival-time MPC can
+%   time the slot, else from rest) until the vehicle front enters /
+%   its rear leaves the conflict zone with vehicle m, from the real path
+%   geometry; tclr_t: time until the turner's rear has left that zone.
 %   Gap shaping (Road Traffic Act art. 37: the turner yields; it only uses a
 %   gap that exists when it turns, checked on board). The RSU may make a gap
 %   by asking oncoming CAVs to arrive a little later, within limits:
@@ -67,6 +68,12 @@ z0k = min(rows(:, 2)); z1k = max(rows(:, 3));
 dent_t = travel_time(z0k - P.s_wait, 0, 1.5, vt);
 tclr_t = travel_time(z1k + L - P.s_wait, 0, 1.5, vt);
 z = cfg.unc_z;
+% speed of the turner at its waiting point: an arrival-time MPC turner that
+% is still moving rolls into its slot at curve speed; otherwise from rest
+v_t0 = 0;
+if strcmp(cfg.msg, 'time') && strcmp(cfg.ctrl, 'mpc') && W.v(it) > 1 && W.s(it) < P.s_wait - 1
+    v_t0 = vt;
+end
 
 % ---- own approach: turner and its followers ----
 [Fa, ta, sa] = rsu_estimate(rsu, W, a, t, G, cfg.est);
@@ -113,9 +120,13 @@ for m = 1:M
     vc = max(vo(m), 6);
     dent = (qz(4) - sStop) / vc;
     dexit = (qz(5) + L - sStop) / vc;
+    % the turner's entry / clearing time of THIS conflict zone (not of the
+    % whole turn, which also includes the merge with oncoming left-turners)
+    dent_m = travel_time(qz(2) - P.s_wait, v_t0, 1.5, vt);
+    tclr_m = travel_time(qz(3) + L - P.s_wait, v_t0, 1.5, vt);
     u = z * sqrt(sig_t^2 + sgm(m)^2);
-    Db(m) = dexit - dent_t + rsu.pet + u;
-    Da(m) = tclr_t - dent + rsu.pet + u;
+    Db(m) = dexit - dent_m + rsu.pet + u;
+    Da(m) = tclr_m - dent + rsu.pet + u;
 end
 
 % ---- shaping limits of every oncoming vehicle ----
