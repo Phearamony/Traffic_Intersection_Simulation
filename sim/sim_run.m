@@ -9,7 +9,7 @@ function R = sim_run(cfgName, S, opts)
 %   Every configuration uses this loop; sim_config only switches the
 %   controller, the coordination, the estimator and the RSU message.
 %
-%   Step order (dt = 0.5 s, t = KK*dt as in the earlier scripts)
+%   Step order (dt = 0.5 s; step KK decides at t = (KK-1) dt and ends at t + dt)
 %     1  signal states
 %     2  scheduled arrivals join the entry queue of their approach
 %     3  the first vehicle of each entry queue enters if the entry is free

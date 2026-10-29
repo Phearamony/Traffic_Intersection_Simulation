@@ -101,7 +101,7 @@ switch S.driver
 end
 
 for kk = 1:KKmax
-    tsec = kk * dt;
+    tsec = (kk - 1) * dt;                        % step kk is decided at (kk-1) dt (sim_run)
     if strcmp(S.sched, 'const')
         lamEW = S.demand;  lamNS = lambdaNS_axis(2);
     else
@@ -147,7 +147,7 @@ end
 
 function sched = addArrivals(sched, d, times, isRight, dt, KKmax)
 for t = times
-    kk = round(t / dt);
+    kk = round(t / dt) + 1;
     if kk < 1 || kk > KKmax, continue; end
     sched.([d '_intent'])(kk)    = true;
     sched.([d '_TurnLeft'])(kk)  = false;

@@ -22,9 +22,10 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %       tau_m >= tau_k + Da_km  (or DaC_km)  m after the slot
 %     Db_km = dexit_m - dent_km + PET + z sqrt(sigma_k^2 + sigma_m^2)
 %     Da_km = tclr_km - dent_m  + PET + z sqrt(sigma_k^2 + sigma_m^2)
-%     dent / dexit: time from the stop line (oncoming) or waiting point
-%     (turner) until the front enters / the rear leaves THIS conflict zone,
-%     from the path geometry. A turner commanded with an arrival time
+%     dent / dexit: time from the stop line (oncoming: at its present speed,
+%     accelerating at 1.5 m/s^2 up to the limit or its arc speed) or from the
+%     waiting point (turner) until the front enters / the rear leaves THIS
+%     conflict zone, from the path geometry. A turner commanded with an arrival time
 %     (arrival-time MPC) leaves at its go time, and an oncoming CAV held by
 %     a target cannot be early: in their margins sigma is replaced by the
 %     tracking accuracy s_ctl = 0.5 s (DaC). A held vehicle also makes the
@@ -205,12 +206,15 @@ for ai = 1:2
         for m = 1:nb
             qz = rowFor(rows, G, o, f.mov(m));
             if isempty(qz), continue; end
-            vc = max(f.v(m), 6);
-            if f.mov(m) == 'L'                     % an oncoming left-turner is on its arc
-                PL = G.P(G.idx.([o 'L'])); vc = min(max(f.v(m), 3), min(PL.vcurve(PL.kappa > 0)));
+            % from its stop line, at its speed now, accelerating at 1.5 m/s^2 up
+            % to the speed limit (a left-turner: up to its arc speed)
+            vcap = C.V_LIM;
+            if f.mov(m) == 'L'
+                PL = G.P(G.idx.([o 'L'])); vcap = min(PL.vcurve(PL.kappa > 0));
             end
-            dent = (qz(4) - sStop) / vc;
-            dexit = (qz(5) + L - sStop) / vc;
+            v0m = min(f.v(m), vcap);
+            dent = travel_time(qz(4) - sStop, v0m, 1.5, vcap);
+            dexit = travel_time(qz(5) + L - sStop, v0m, 1.5, vcap);
             dent_k = travel_time(qz(2) - P.s_wait, v_t0, 1.5, vt);
             tclr_k = travel_time(qz(3) + L - P.s_wait, v_t0, 1.5, vt);
             u = z * sqrt(sig_k^2 + f.sd(m)^2);
@@ -226,7 +230,7 @@ for ai = 1:2
     end
 end
 nT = numel(T);
-if once, rsu.once_ids = unique([rsu.once_ids, [T.id]]); end   % planned in this green
+if once, rsu.once_ids = unique([rsu.once_ids, [T.id], turners]); end   % handled in this green
 if nT == 0, return; end
 
 % ---------------- 3. slot search ----------------
@@ -248,7 +252,7 @@ switch cfg.slot
         sizes = cellfun(@numel, S);
         if prod(sizes) > 5000                       % too many combinations: successive
             sl = seqSlots(Ln, T, S, nat_k, h, adv, rsu.w_adv);
-            sizes = ones(1, nT); S = num2cell(sl);
+            sizes = ones(1, nT); S0 = S; S = num2cell(sl);
         end
         idx = ones(1, nT);
         while true
@@ -269,25 +273,27 @@ switch cfg.slot
 end
 if isempty(best), return; end
 rsu.plans = rsu.plans + 1;
+% diagnostics: how often the joint optimizer chooses differently from the
+% successive slot search of [5] (same limits)
+if strcmp(cfg.slot, 'opt')
+    if exist('S0', 'var'), S = S0; end
+    rsu.diag(1) = rsu.diag(1) + 1;                       % plans
+    rsu.diag(2) = rsu.diag(2) + (nT >= 2);               % plans with two or more turners
+    rsu.diag(3) = rsu.diag(3) + any(cellfun(@numel, S) > 1);   % a real choice
+    sls = seqSlots(Ln, T, S, nat_k, h, adv, rsu.w_adv);
+    rsu.diag(4) = rsu.diag(4) + any(sls ~= best.sl);     % different choice
+end
 % a turner that cannot clear before the yellow ends gets no slot this green;
 % nothing is shaped, pulled or held for it
 noslot = false(1, nT);
 for k = 1:nT
     noslot(k) = best.tau{T(k).ai}(T(k).i) + T(k).tclr > T(k).tend;
 end
+shapeOK = true;
 if any(noslot)
     sl2 = best.sl; sl2(noslot) = 0;
     [ok2, R2] = evalBest(Ln, T, sl2, h, adv, rsu.w_adv);
-    if ok2, R2.sl = sl2; best = R2; end
-end
-% diagnostics: how often the joint optimizer chooses differently from the
-% successive slot search of [5] (same limits)
-if strcmp(cfg.slot, 'opt')
-    rsu.diag(1) = rsu.diag(1) + 1;                       % plans
-    rsu.diag(2) = rsu.diag(2) + (nT >= 2);               % plans with two or more turners
-    rsu.diag(3) = rsu.diag(3) + any(cellfun(@numel, S) > 1);   % a real choice
-    sls = seqSlots(Ln, T, S, nat_k, h, adv, rsu.w_adv);
-    rsu.diag(4) = rsu.diag(4) + any(sls ~= best.sl);     % different choice
+    if ok2, R2.sl = sl2; best = R2; else, shapeOK = false; end   % no stale holds
 end
 
 % ---------------- 4. messages ----------------
@@ -303,7 +309,7 @@ for k = 1:nT
                          'go', t + tk, 'pull', false, 'hard', false); %#ok<AGROW>
 end
 timeMsg = strcmp(cfg.msg, 'time');
-for ai = 1:2
+for ai = 1:2*shapeOK
     e = Ln{ai}; tau = best.tau{ai}; held = best.held{ai}; pulled = best.pulled{ai};
     for i = 1:numel(e.id)
         if e.fixed(i) || e.turn(i) || ~e.cav(i) || e.mov(i) == 'R', continue; end
@@ -437,7 +443,11 @@ for ai = 1:2
     e = Ln{ai}; x = tau{ai};
     for i = 1:numel(e.id)
         if x(i) < e.lo(i) - 0.01
-            if ~pulled{ai}(i) || x(i) < e.lo_adv(i) - 0.01, ok = false; return; end
+            % earlier than lo only as a pulled CAV, by at least 0.3 s (the
+            % smallest change that is sent as a message)
+            if ~pulled{ai}(i) || x(i) < e.lo_adv(i) - 0.01 || x(i) > e.lo(i) - 0.3 + 0.01
+                ok = false; return;
+            end
             continue;
         end
         pulled{ai}(i) = false;                     % not earlier after all

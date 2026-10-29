@@ -7,7 +7,7 @@ function rsu = rsu_crossed(rsu, veh, t_stop, cfg)
 %   online   the PI-GPR copy learns the residual y - prior (gp_update with
 %            forgetting factor rsu.lambda), only from arrivals within the
 %            green in which the snapshot was taken (the training scope) and
-%            only for vehicles the RSU knows and did not command
+%            only for vehicles the RSU knows and did not delay or pull forward
 if isempty(rsu.pending), return; end
 m = [rsu.pending.id] == veh.id;
 if ~any(m), return; end
@@ -27,10 +27,14 @@ if rsu.eval
     rsu.evalrows = [rsu.evalrows; [[P.t]', repmat(veh.id, numel(P), 1), y(:), [P.g]', pr]];
 end
 online = (rsu.eval || (rsu.plan && cfg.online && strcmp(cfg.est, 'pigpr'))) && ~isempty(rsu.pigpr_on);
-% arrivals the RSU changed itself (shaped, pulled, eco) are not natural
-% arrivals: they are not learned from
-if online && rsu.plan && (any(rsu.shp.id == veh.id) || any(rsu.pul.id == veh.id) || any(rsu.eco == veh.id))
-    online = false;
+% arrivals the RSU changed itself (asked to arrive 0.3 s or more later, or
+% pulled forward) are not natural arrivals: they are not learned from
+% (holds at the natural time and eco times are kept)
+if online && rsu.plan
+    k = find(rsu.shp.id == veh.id, 1);
+    if (~isempty(k) && rsu.shp.tgt(k) - rsu.shp.nat(k) >= 0.3) || any(rsu.pul.id == veh.id)
+        online = false;
+    end
 end
 if online
     inph = [P.g]' > 0 & y(:) <= [P.g]' + 1e-6;
