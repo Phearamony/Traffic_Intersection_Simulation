@@ -33,6 +33,13 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %     tracking accuracy s_ctl = 0.5 s (DaC). A held vehicle also makes the
 %     vehicle behind it unable to be early.
 %     Two turners of the same lane take their slots in lane order.
+%     A straight or left-turning vehicle past its stop line that stands
+%     behind a waiting turner of its own lane is not "crossing now": it can
+%     only move after that turner has left, and it yields to a turner in the
+%     junction (sim_run, step 6; turn_gap_ok). It is planned in lane order
+%     behind its turner and may be later than lo (as a turner may). Without
+%     this, two opposing turners each wait for the vehicle stuck behind the
+%     other and neither gets a go time (mutual right-turn deadlock).
 %     All constraints only push times later, so the times of a slot
 %     assignment are the smallest fixed point (iterated until no change).
 %
@@ -122,6 +129,9 @@ for ai = 1:2
     [F, tp, sd] = rsu_estimate(rsu, W, a, t, G, cfg.est);
     % vehicles past the stop line: not yet clear (non-R) or waiting turners
     past = find(W.app == a & W.s >= sStop);
+    % waiting turners of this lane: the vehicles behind them are blocked
+    sWt = W.s(past(W.mov(past) == 'R' & ~W.committed(past) & W.s(past) <= P.s_wait + 0.05));
+    blk = zeros(1, 0);
     e = struct('id', [], 'mov', '', 'cav', false(1, 0), 'fixed', false(1, 0), 'd', [], ...
                'v', [], 's', [], 'lo', [], 'sd', [], 'turn', false(1, 0));
     for r = past
@@ -132,6 +142,12 @@ for ai = 1:2
         else
             qz = rowFor(rowsO, G, a, W.mov(r));
             if isempty(qz) || W.s(r) - L > qz(5), continue; end
+            if any(sWt > W.s(r))
+                % blocked behind a waiting turner: moves only after it (lane order)
+                e = addE(e, W.ids(r), W.mov(r), W.cav(r), false, 0, W.v(r), W.s(r), 0, 0.3, false);
+                blk(end+1) = W.ids(r); %#ok<AGROW>
+                continue;
+            end
             lo = -(W.s(r) - sStop) / max(W.v(r), 1);
             e = addE(e, W.ids(r), W.mov(r), W.cav(r), true, 0, W.v(r), W.s(r), lo, 0, false);
         end
@@ -145,9 +161,10 @@ for ai = 1:2
         e = addE(e, F.ids(q), F.mov(q), W.cav(ix(q)), false, F.d(q), F.v(q), W.s(ix(q)), lo, sd(q), isT);
     end
     n = numel(e.id);
+    e.yld = ismember(e.id, blk);                  % blocked behind its turner, yields
     e.nat = e.lo; e.hi = e.lo; e.ps = zeros(1, n);
     for i = 1:n
-        if e.fixed(i) || e.turn(i), continue; end
+        if e.fixed(i) || e.turn(i) || e.yld(i), continue; end
         k = find(rsu.shp.id == e.id(i), 1);
         if ~isempty(k)
             e.lo(i) = max(e.lo(i), rsu.shp.tgt(k) - t);
@@ -181,7 +198,7 @@ for ai = 1:2
             e.lo_adv(i) = e.lo(i) - max(0, min(rsu.adv_max, e.d(i) / e.v(i) - t_fast));
         end
     end
-    e.hold = ctl & e.cav & ~e.fixed & e.mov ~= 'R' & ~strict;   % may be held (arrival-time MPC)
+    e.hold = ctl & e.cav & ~e.fixed & ~e.yld & e.mov ~= 'R' & ~strict;   % may be held (arrival-time MPC)
     e.cmd = e.hold | e.hi > e.lo + 1e-6;                         % may be commanded at all
     e.onc = e.mov ~= 'R';                          % can conflict with the other turner
     Ln{ai} = e;
@@ -324,7 +341,7 @@ timeMsg = strcmp(cfg.msg, 'time');
 for ai = 1:2
     e = Ln{ai}; tau = best.tau{ai}; held = best.held{ai}; pulled = best.pulled{ai};
     for i = 1:numel(e.id)
-        if e.fixed(i) || e.turn(i) || ~e.cav(i) || e.mov(i) == 'R', continue; end
+        if e.fixed(i) || e.turn(i) || e.yld(i) || ~e.cav(i) || e.mov(i) == 'R', continue; end
         k = e.ps(i);
         keep = k > 0 && t < rsu.shp.tgt(k);       % keep repeating a given target
         if pulled(i) && tau(i) <= e.lo(i) - 0.29
@@ -465,7 +482,7 @@ for ai = 1:2
         pulled{ai}(i) = false;                     % not earlier after all
         if x(i) <= e.lo(i) + 0.01, continue; end
         if e.fixed(i), ok = false; return; end
-        if e.turn(i), continue; end
+        if e.turn(i) || e.yld(i), continue; end
         if i > 1 && x(i) <= x(i - 1) + h + 0.01, continue; end     % pushed by the one ahead
         if e.cmd(i) && x(i) <= e.hi(i) + 0.01, continue; end     % commanded within its limit
         ok = false; return;
