@@ -22,10 +22,12 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %       tau_m >= tau_k + Da_km  (or DaC_km)  m after the slot
 %     Db_km = dexit_m - dent_km + PET + z sqrt(sigma_k^2 + sigma_m^2)
 %     Da_km = tclr_km - dent_m  + PET + z sqrt(sigma_k^2 + sigma_m^2)
-%     dent / dexit: time from the stop line (oncoming: at its present speed,
-%     accelerating at 1.5 m/s^2 up to the limit or its arc speed) or from the
-%     waiting point (turner) until the front enters / the rear leaves THIS
-%     conflict zone, from the path geometry. A turner commanded with an arrival time
+%     dent / dexit: time from the stop line (oncoming) or from the waiting
+%     point (turner) until the front enters / the rear leaves THIS conflict
+%     zone, from the path geometry. For an oncoming vehicle both are bounded
+%     on the safe side: dent at full speed (speed limit, or the arc speed of
+%     a left-turner), dexit at its present speed or from rest if it is slow
+%     now, accelerating at 1.5 m/s^2. A turner commanded with an arrival time
 %     (arrival-time MPC) leaves at its go time, and an oncoming CAV held by
 %     a target cannot be early: in their margins sigma is replaced by the
 %     tracking accuracy s_ctl = 0.5 s (DaC). A held vehicle also makes the
@@ -206,14 +208,17 @@ for ai = 1:2
         for m = 1:nb
             qz = rowFor(rows, G, o, f.mov(m));
             if isempty(qz), continue; end
-            % from its stop line, at its speed now, accelerating at 1.5 m/s^2 up
-            % to the speed limit (a left-turner: up to its arc speed)
+            % times from its stop line, bounded on the safe side (its speed at
+            % the stop line is not known): it ENTERS the zone at the earliest at
+            % full speed vcap (speed limit; a left-turner: its arc speed), and
+            % it LEAVES at the latest keeping its present speed, or starting
+            % from rest when it is slow now (queue), accelerating at 1.5 m/s^2
             vcap = C.V_LIM;
             if f.mov(m) == 'L'
                 PL = G.P(G.idx.([o 'L'])); vcap = min(PL.vcurve(PL.kappa > 0));
             end
-            v0m = min(f.v(m), vcap);
-            dent = travel_time(qz(4) - sStop, v0m, 1.5, vcap);
+            v0m = min(f.v(m), vcap); if v0m < 5, v0m = 0; end
+            dent = (qz(4) - sStop) / vcap;
             dexit = travel_time(qz(5) + L - sStop, v0m, 1.5, vcap);
             dent_k = travel_time(qz(2) - P.s_wait, v_t0, 1.5, vt);
             tclr_k = travel_time(qz(3) + L - P.s_wait, v_t0, 1.5, vt);
@@ -293,8 +298,9 @@ shapeOK = true;
 if any(noslot)
     sl2 = best.sl; sl2(noslot) = 0;
     [ok2, R2] = evalBest(Ln, T, sl2, h, adv, rsu.w_adv);
-    if ok2, R2.sl = sl2; best = R2; else, shapeOK = false; end   % no stale holds
+    if ok2, R2.sl = sl2; best = R2; else, shapeOK = false; end
 end
+if ~shapeOK, return; end                         % no consistent plan this step: send nothing
 
 % ---------------- 4. messages ----------------
 for k = 1:nT
@@ -309,13 +315,13 @@ for k = 1:nT
                          'go', t + tk, 'pull', false, 'hard', false); %#ok<AGROW>
 end
 timeMsg = strcmp(cfg.msg, 'time');
-for ai = 1:2*shapeOK
+for ai = 1:2
     e = Ln{ai}; tau = best.tau{ai}; held = best.held{ai}; pulled = best.pulled{ai};
     for i = 1:numel(e.id)
         if e.fixed(i) || e.turn(i) || ~e.cav(i) || e.mov(i) == 'R', continue; end
         k = e.ps(i);
         keep = k > 0 && t < rsu.shp.tgt(k);       % keep repeating a given target
-        if pulled(i) && tau(i) < e.lo(i) - 0.3
+        if pulled(i) && tau(i) <= e.lo(i) - 0.29
             % asked to arrive earlier (drive up to the speed limit)
             kq = find(rsu.pul.id == e.id(i), 1);
             if isempty(kq)
