@@ -33,9 +33,9 @@ end
 
 cfg   = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', ...
          'C3_mpc_rsu_gpr', 'C4_no_unc', 'C4_no_online', 'C4_speed_adv', 'C4_strict', 'C4_seq', ...
-         'C4_no_adv', 'C4_once', 'C4_no_green', 'C4_proposed'};
+         'C4_no_adv', 'C4_once', 'C4_proposed'};
 names = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2 [5]', 'C2G', 'C3I', 'C3 CISE', 'C4-unc', 'C4-onl', 'C4-spd', ...
-         'C4-strict', 'C4-seq', 'C4-adv', 'C4-once', 'C4-green', 'C4'};
+         'C4-strict', 'C4-seq', 'C4-adv', 'C4-once', 'C4'};
 keep  = ismember(cfg, cellstr(unique(T.label)));
 cfg = cfg(keep); names = names(keep);
 
@@ -90,8 +90,7 @@ cmp = { 'C1_human',        'C4_proposed',     'Proposed vs human  (C1\rightarrow
         'C4_strict',       'C4_proposed',     'Gap shaping  (strict\rightarrowC4)';
         'C4_seq',          'C4_proposed',     'Joint vs successive slots';
         'C4_no_adv',       'C4_proposed',     'Pulling forward';
-        'C4_once',         'C4_proposed',     'Every step vs once per green';
-        'C4_no_green',     'C4_proposed',     'Green-time term in the cost' };
+        'C4_once',         'C4_proposed',     'Every step vs once per green' };
 pm  = {'fuel_rt_mL', 'gap_rt_s', 'n_exited'};
 pl  = {'\Delta fuel per right-turner [mL]', '\Delta gap wait [s]', '\Delta vehicles finished [veh]'};
 

@@ -42,9 +42,7 @@ that possible. Human drivers have no V2X: the RSU can neither see nor instruct t
 2. **Joint gap-shaping slot optimizer** (`sim/rsu_plan.m`). The slot search of [5] (insert the turner
    before oncoming vehicle *p*), extended to every waiting turner of both approaches at once. For each
    candidate assignment the RSU computes the smallest legal changes that make it work and keeps the one
-   with the least total delay. A vehicle that the assignment would push past the end of the green is
-   counted at its real crossing time, the next green, so the turner only gets green time the queue does
-   not need, and a turner blocking its own lane is weighed against the oncoming cars. The right-turner always yields (Road Traffic Act, art. 37): its on-board
+   with the least total delay. The right-turner always yields (Road Traffic Act, art. 37): its on-board
    check only lets it turn into a gap that exists. To make a gap the RSU may ask oncoming CAVs to arrive a
    little later (at most 2 s, never below 0.7 of their speed, about 1 m/s^2, no new command within 40 m of
    the stop line) or, for the car before the gap, a little earlier (up to the speed limit). Safety margins
@@ -95,7 +93,7 @@ cise/         everything of the conference paper: v1 code, its full results, old
 | V2V_MPC | MPC | V2V, on-board gap check | | |
 | C2 | IDM tracking the target time | **method of [5]**: slot search once per green, 4 s gap, turners one after another | IDM forward sim. | target times |
 | C3 | MPC | **CISE method**: as C2 | GPR | target times |
-| **C4** | **MPC** | **joint slot optimizer every 0.5 s with a green-time term, gap shaping (later / earlier), uncertainty margins, eco approach** | **PI-GPR, online** | **target times** |
+| **C4** | **MPC** | **joint slot optimizer every 0.5 s, gap shaping (later / earlier), uncertainty margins, eco approach** | **PI-GPR, online** | **target times** |
 | C4_NOUNC | as C4, no uncertainty term in the margins | | | |
 | C4_NOONLINE | as C4, no online learning | | | |
 | C4_SPEED | as C4, speed advice instead of target times | | | |
@@ -103,7 +101,6 @@ cise/         everything of the conference paper: v1 code, its full results, old
 | C4_SEQ | as C4, turners one after another (the successive search of [5]) | | | |
 | C4_NOADV | as C4, oncoming CAVs only asked to arrive later, never earlier | | | |
 | C4_ONCE | as C4, planned once per green (as [5]) | | | |
-| C4_NOGREEN | as C4, slot cost without the green-time term (plain quadratic delay, as [5]) | | | |
 
 Set the configuration by name in `main_one.m` or `main_animation.m`.
 
@@ -133,10 +130,10 @@ Then open a script in `main/`, change the settings block at the top if you want,
 
 | Script | What it does | Time (MATLAB, rough) |
 |---|---|---|
-| `main_animation.m` | Live animation of the configurations you list (default C1, C2, C3, C4; `'ALL'` for all thirteen), one after another on the same traffic. Close the window to skip to the next. Nothing is saved | a few minutes each |
+| `main_animation.m` | Live animation of the configurations you list (default C1, C2, C3, C4; `'ALL'` for all twelve), one after another on the same traffic. Close the window to skip to the next. Nothing is saved | a few minutes each |
 | `main_train.m` | Train the estimators (GPR, PI-GPR) on seeds 1-20. **Run it first, and again after any change to the traffic model** | 15-30 min |
 | `main_one.m` | Run one configuration, with or without animation, and save its figures | a few minutes |
-| `main_all.m` | Everything for the paper: training, main study (13 configurations x 20 seeds), figures, scenarios, stress tests | about a day; switch parts off in its settings |
+| `main_all.m` | Everything for the paper: training, main study (12 configurations x 20 seeds), figures, scenarios, stress tests | about a day; switch parts off in its settings |
 | `main_figures.m` | Redraw the figures from results that already exist | 10-20 min |
 
 After `git pull`, start with `main_train.m`, look at one run with `main_animation.m`, then start
