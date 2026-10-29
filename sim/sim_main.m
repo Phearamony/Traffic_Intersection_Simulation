@@ -29,6 +29,7 @@ fprintf(['[%s] exited %d, RT %d/%d, fuel %.2f L/100km, gap wait %.1f s, delay %.
 if ~S.nolog
     metrics_write(M, cfg.label, S);
 end
+if (S.plot || S.savelog) && ~exist(S.outdir, 'dir'), mkdir(S.outdir); end
 if S.plot
     try
         sim_figures(R, S.outdir);

@@ -1,7 +1,7 @@
 function plot_sweeps(out_dir)
 %PLOT_SWEEPS  Figures and tables of the stress tests (run_sweeps.m).
 %
-%   plot_sweeps()            % reads output/sweeps/
+%   plot_sweeps()            % reads and writes output/5_stress_tests/
 %   plot_sweeps(out_dir)
 %
 %   For every study found in sweep_runs.csv:
@@ -28,8 +28,7 @@ function plot_sweeps(out_dir)
 %                                           is at least 1 per run
 %                            NaN = never met in the swept range.
 
-root = fileparts(fileparts(mfilename('fullpath')));
-if nargin < 1 || isempty(out_dir), out_dir = fullfile(root, 'output', 'sweeps'); end
+if nargin < 1 || isempty(out_dir), out_dir = out_folder('sweeps'); end
 runs_csv = fullfile(out_dir, 'sweep_runs.csv');
 est_csv  = fullfile(out_dir, 'sweep_estimator.csv');
 if ~exist(runs_csv, 'file')

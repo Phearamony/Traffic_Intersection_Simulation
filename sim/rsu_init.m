@@ -8,7 +8,7 @@ function rsu = rsu_init(cfg, G, S, opts)
 %   data-collection modes (opts.est_eval / opts.collect) it sees every
 %   vehicle, like a perfect roadside sensor, and plans nothing.
 %
-%   Estimator models (simplot/estimators.mat, from train_estimators):
+%   Estimator models (output/1_training/estimators.mat, from train_estimators):
 %   theta (physics), gpr (4 inputs), pigpr (7 inputs, residual on physics).
 
 rsu.cfg = cfg;
@@ -46,7 +46,7 @@ rsu.theta = [2.0, 2.0, 1.5];
 rsu.gpr = []; rsu.pigpr = []; rsu.pigpr_on = [];
 
 needModel = rsu.eval || (rsu.plan && any(strcmp(cfg.est, {'gpr', 'pigpr'})));
-mf = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'simplot', 'estimators.mat');
+mf = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'output', '1_training', 'estimators.mat');
 if isfield(S, 'estfile') && ~isempty(S.estfile), mf = S.estfile; end
 if exist(mf, 'file')
     E = load(mf);
@@ -54,6 +54,6 @@ if exist(mf, 'file')
     if isfield(E, 'gpr'), rsu.gpr = E.gpr; end
     if isfield(E, 'pigpr'), rsu.pigpr = E.pigpr; rsu.pigpr_on = E.pigpr; end
 elseif needModel
-    error('rsu_init: %s not found. Run train_estimators first.', mf);
+    error('rsu_init: %s not found. Run main/main_train.m first.', mf);
 end
 end

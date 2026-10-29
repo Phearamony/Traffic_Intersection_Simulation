@@ -1,7 +1,7 @@
 function plot_ablation_summary(csv_path, out_dir)
 %PLOT_ABLATION_SUMMARY  Journal figures from the multi-seed ablation.
 %
-%   plot_ablation_summary()                    % output/ablation_runs.csv -> output/
+%   plot_ablation_summary()       % output/2_main_study/ablation_runs.csv -> output/3_figures/
 %   plot_ablation_summary(csv_path, out_dir)
 %
 %   ablation_summary.png
@@ -19,9 +19,8 @@ function plot_ablation_summary(csv_path, out_dir)
 %
 %   Needs the Statistics and Machine Learning Toolbox (tinv).
 
-root = fileparts(fileparts(mfilename('fullpath')));
-if nargin < 1 || isempty(csv_path), csv_path = fullfile(root, 'output', 'ablation_runs.csv'); end
-if nargin < 2 || isempty(out_dir),  out_dir  = fullfile(root, 'output'); end
+if nargin < 1 || isempty(csv_path), csv_path = out_folder('study', 'ablation_runs.csv'); end
+if nargin < 2 || isempty(out_dir),  out_dir  = out_folder('figures'); end
 if ~exist(csv_path, 'file')
     error('plot_ablation_summary: %s not found. Run run_ablation first.', csv_path);
 end

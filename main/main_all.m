@@ -7,15 +7,17 @@
 %   4. illustrative scenarios A and B
 %   5. stress tests (demand, right-turn share, latency, loss, penetration,
 %      driver type, asymmetry, shaping limit), seeds 201-210, and their figures
-% A failed step is logged and the next one still runs. Everything goes to
-% output/; the console is saved to output/run_all_log.txt.
+% A failed step is logged and the next one still runs. Results go to
+% output/, one numbered folder per step (see output/README.md):
+%   1_training  2_main_study  3_figures  4_scenarios  5_stress_tests
+% The console is saved to output/main_all_log.txt.
 % Rough time in MATLAB: about a day for everything; steps 1-3 alone take a
 % few hours.
 
 clear; close all;
 
 % ---------------- settings ----------------
-FRESH      = true;           % true: delete old results in output/ first
+FRESH      = true;           % true: delete the old results of the steps switched on below
 DO_TRAIN   = true;           % 1. estimators
 DO_STUDY   = true;           % 2. main study
 DO_FIGURES = true;           % 3. figures
@@ -30,18 +32,30 @@ CONFIGS     = {};            % {} = the default 12 (see function/run_ablation.m)
 
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
-out = fullfile(root, 'output'); if ~exist(out, 'dir'), mkdir(out); end
+out = out_folder('');
 abl_env_reset();
 
 if FRESH
-    f = {'ablation_runs.csv', 'ablation_stats.csv', 'ablation_pairs.csv', ...
-         'estimator_runs.csv', 'ablation_errors.log', 'run_all_log.txt'};
-    for k = 1:numel(f), if exist(fullfile(out, f{k}), 'file'), delete(fullfile(out, f{k})); end, end
-    d = {'scenarios', 'sweeps'};
-    for k = 1:numel(d), if exist(fullfile(out, d{k}), 'dir'), rmdir(fullfile(out, d{k}), 's'); end, end
+    % results of the steps that will run again (the trained model is kept
+    % unless DO_TRAIN), and files of the older flat layout of output/
+    kinds = {'training', 'study', 'figures', 'scenarios', 'sweeps'};
+    on = [DO_TRAIN, DO_STUDY, DO_FIGURES, DO_SCEN, DO_SWEEPS];
+    for k = find(on)
+        d = out_folder(kinds{k}, '');
+        if exist(d, 'dir'), rmdir(d, 's'); end
+    end
+    old = dir(out);
+    for k = 1:numel(old)
+        nm = old(k).name;
+        if any(strcmp(nm, {'.', '..', 'README.md'})) || any(strcmp(nm, {'1_training', '2_main_study', ...
+                '3_figures', '4_scenarios', '5_stress_tests', 'single_runs'}))
+            continue;
+        end
+        if old(k).isdir, rmdir(fullfile(out, nm), 's'); else, delete(fullfile(out, nm)); end
+    end
 end
 
-diary(fullfile(out, 'run_all_log.txt'));
+diary(fullfile(out, 'main_all_log.txt'));
 t0 = tic;
 steps = {
     DO_TRAIN,   'estimator training', @() train_estimators(TRAIN_SEEDS, 4, KKMAX)

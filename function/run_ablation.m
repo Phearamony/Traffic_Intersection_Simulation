@@ -15,12 +15,14 @@ function run_ablation(seeds, kkmax, with_estimator, cfgs)
 %     C4_STRICT (existing gaps only), C4_SEQ (turners one after another,
 %     as [5]), C4_NOADV (no pulling forward), C4_ONCE (planned once per green)
 %   Also available: V2V_IDM, C2G, C3I (the factorial of the CISE paper).
-%   All share the traffic of each seed. One row per (seed, configuration)
-%   goes to output/ablation_runs.csv; summarize_ablation() then writes
-%   ablation_stats.csv and ablation_pairs.csv.
+%   All share the traffic of each seed. Output in output/2_main_study/:
+%     ablation_runs.csv     one row per (seed, configuration), every metric
+%     estimator_runs.csv    estimator accuracy per seed (with_estimator)
+%     ablation_stats.csv, ablation_pairs.csv   from summarize_ablation()
+%     ablation_errors.log   runs that failed (a failed run does not stop the study)
 %   Seeds start at 101: the estimators are trained on seeds 1 to 20.
-%   Train first:  train_estimators.  Delete output/ablation_runs.csv before
-%   a fresh study.
+%   Train first (main/main_train.m). main_all.m with FRESH = true deletes
+%   the old study before a new one.
 
 if nargin < 1 || isempty(seeds), seeds = 101:120; end
 if nargin < 2 || isempty(kkmax), kkmax = 720; end
@@ -31,18 +33,19 @@ if nargin < 4 || isempty(cfgs)
 end
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
-out = fullfile(root, 'output'); if ~exist(out, 'dir'), mkdir(out); end
+out = out_folder('study');
 log_path = fullfile(out, 'ablation_errors.log');
 
-names = {'ABL_SEED', 'ABL_KKMAX', 'ABL_PLOT', 'ABL_LIVE', 'ABL_NOLOG', 'ABL_STUDY', 'ABL_POINT'};
+names = {'ABL_SEED', 'ABL_KKMAX', 'ABL_PLOT', 'ABL_LIVE', 'ABL_NOLOG', 'ABL_STUDY', 'ABL_POINT', ...
+         'ABL_OUTDIR', 'ABL_CSV', 'ABL_EST_CSV'};
 old = cellfun(@getenv, names, 'UniformOutput', false);
 cleanupObj = onCleanup(@() restoreEnv(names, old)); %#ok<NASGU>
 abl_env_reset();
 setenv('ABL_PLOT', '0'); setenv('ABL_LIVE', '0'); setenv('ABL_NOLOG', '0');
 setenv('ABL_KKMAX', num2str(kkmax));
-% rows of this study are marked, so single runs (main_one.m, main_animation.m) that
-% also write to ablation_runs.csv are not mixed into the statistics
-setenv('ABL_STUDY', 'ablation'); setenv('ABL_POINT', '-');
+setenv('ABL_OUTDIR', out); setenv('ABL_CSV', fullfile(out, 'ablation_runs.csv'));
+setenv('ABL_EST_CSV', fullfile(out, 'estimator_runs.csv'));
+setenv('ABL_STUDY', 'ablation'); setenv('ABL_POINT', '-');   % rows of this study are marked
 
 t_all = tic;
 for s = seeds

@@ -1,7 +1,7 @@
 function [stats, pairs] = summarize_ablation(csv_path)
 %SUMMARIZE_ABLATION  Means, 95% CIs and paired tests from ablation_runs.csv.
 %
-%   [stats, pairs] = summarize_ablation()            % uses output/ablation_runs.csv
+%   [stats, pairs] = summarize_ablation()     % output/2_main_study/ablation_runs.csv
 %   [stats, pairs] = summarize_ablation(csv_path)
 %
 %   stats : one row per configuration and metric: n seeds, mean, std,
@@ -10,11 +10,11 @@ function [stats, pairs] = summarize_ablation(csv_path)
 %           mean difference, its 95% CI, Wilcoxon signed-rank p-value,
 %           paired t-test p-value
 %
-%   Writes output/ablation_stats.csv and output/ablation_pairs.csv.
+%   Writes ablation_stats.csv and ablation_pairs.csv next to the input CSV.
 %   Needs the Statistics and Machine Learning Toolbox (tinv, signrank, ttest).
 
 if nargin < 1
-    csv_path = fullfile(fileparts(mfilename('fullpath')), '..', 'output', 'ablation_runs.csv');
+    csv_path = out_folder('study', 'ablation_runs.csv');
 end
 out_dir = fileparts(csv_path);
 

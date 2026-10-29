@@ -12,9 +12,10 @@ function S = abl_settings()
 %   ABL_PLOT        1 = save the per-run figures (trajectories, fuel) (default 1)
 %   ABL_LIVE        1 = live intersection animation while running    (default 1)
 %   ABL_NOLOG       1 = do not append rows to the results CSVs       (default 0)
-%   ABL_OUTDIR      folder for figures                               (default output/)
-%   ABL_CSV         results CSV          (default output/ablation_runs.csv)
-%   ABL_EST_CSV     estimator CSV        (default output/estimator_runs.csv)
+%   ABL_OUTDIR      folder for figures and saved runs   (default output/single_runs)
+%   ABL_CSV         results CSV       (default output/single_runs/single_runs.csv)
+%   ABL_EST_CSV     estimator CSV  (default output/single_runs/estimator_runs.csv)
+%                   (the runners set these to their own folder, see out_folder.m)
 %   ABL_STUDY, ABL_POINT   labels written into every results row     (default '')
 %   ABL_SAVELOG     1 = also save the run (log, vehicles) to ABL_OUTDIR (default 0)
 %
@@ -39,16 +40,14 @@ function S = abl_settings()
 %                   invisible to the RSU; 'all' = RSU also senses them
 %                   (roadside camera or radar), but cannot instruct them
 
-root = fileparts(fileparts(mfilename('fullpath')));
-
 S.seed     = readNum('ABL_SEED',  1);
 S.KKmax    = readNum('ABL_KKMAX', 720);
 S.plot     = logical(readNum('ABL_PLOT', 1));
 S.live     = logical(readNum('ABL_LIVE', 1));
 S.nolog    = logical(readNum('ABL_NOLOG', 0));
-S.outdir   = readStr('ABL_OUTDIR', fullfile(root, 'output'));
-S.csv      = readStr('ABL_CSV', fullfile(root, 'output', 'ablation_runs.csv'));
-S.estcsv   = readStr('ABL_EST_CSV', fullfile(root, 'output', 'estimator_runs.csv'));
+S.outdir   = readStr('ABL_OUTDIR', out_folder('single', ''));
+S.csv      = readStr('ABL_CSV', out_folder('single', 'single_runs.csv'));
+S.estcsv   = readStr('ABL_EST_CSV', out_folder('single', 'estimator_runs.csv'));
 S.study    = readStr('ABL_STUDY', '');
 S.point    = readStr('ABL_POINT', '');
 S.savelog  = logical(readNum('ABL_SAVELOG', 0));
@@ -65,8 +64,6 @@ S.pen      = readNum('ABL_PEN', 1);
 S.sense    = lower(readStr('ABL_SENSE', 'v2x'));
 S.dmax     = readNum('ABL_DMAX', 2);
 S.estfile  = '';
-
-if ~exist(S.outdir, 'dir'), mkdir(S.outdir); end
 end
 
 function v = readNum(name, default)

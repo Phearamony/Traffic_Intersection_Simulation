@@ -303,7 +303,7 @@ $$
 
 ### 5.1 What the RSU knows
 
-`rsu_init` (`sim/rsu_init.m:14-58`) loads `simplot/estimators.mat` (theta, gpr, pigpr); `pigpr_on` is a copy that learns online. Default `theta = [2.0, 2.0, 1.5]` if there is no file.
+`rsu_init` (`sim/rsu_init.m:14-58`) loads `output/1_training/estimators.mat` (theta, gpr, pigpr); `pigpr_on` is a copy that learns online. Default `theta = [2.0, 2.0, 1.5]` if there is no file.
 
 | field | value | line |
 |---|---|---|
@@ -429,13 +429,13 @@ Because the clock changed in 70d8d01, the estimators must be retrained before an
 
 ### Things to check (part 5)
 
-- **Training population vs. use.** The estimators are trained on C1 human traffic only (`function/train_estimators.m:40`) and used in C3/C4, where vehicles are MPC CAVs with $T_c = 1.2$ s, capped speed and RSU holds. The online update (C4 only) has to absorb the shift within one 360 s run. Report estimator error inside C4 runs, not only on C1 seeds.
+- **Training population vs. use.** The estimators are trained on C1 human traffic only (`function/train_estimators.m:43`) and used in C3/C4, where vehicles are MPC CAVs with $T_c = 1.2$ s, capped speed and RSU holds. The online update (C4 only) has to absorb the shift within one 360 s run. Report estimator error inside C4 runs, not only on C1 seeds.
 - **Selection in online learning.** Since b3dfe15 the RSU skips only vehicles it delayed by 0.3 s or more or pulled forward (`sim/rsu_crossed.m:33-38`); in 70d8d01 it also skipped eco and held vehicles, which removed most blocked-queue arrivals (fixed). Eco and held arrivals are still shaped by the MPC's arrival-time hold, so the learner partly learns controlled arrivals. Check `rsu.online_n` per run.
-- Calibration of $c_0, c_1$ uses in-sample residuals (`function/train_estimators.m:86-87`); check the 90% coverage on the test seeds.
+- Calibration of $c_0, c_1$ uses in-sample residuals (`function/train_estimators.m:89-90`); check the 90% coverage on the test seeds.
 - With $\lambda = 0.995$ applied once per crossing vehicle, the half-life is about 138 crossings.
 - In mixed traffic with `sense='v2x'`, $n$, $gap$, $v_l$, $n_R$ omit human vehicles, unlike training.
 - `est_idm` ignores the waiting right-turner (by design, `sim/est_idm.m:12`); for C2 only the lane-order constraint in `rsu_plan` covers it.
-- The `idm` estimator in `est_eval_run` includes the $h_{min}$ chain (via `sim/rsu_estimate.m:53-56`), while `idm` in `train_estimators` is the raw IDM (`function/train_estimators.m:93`). Same name, different estimator; label them differently in the paper tables.
+- The `idm` estimator in `est_eval_run` includes the $h_{min}$ chain (via `sim/rsu_estimate.m:53-56`), while `idm` in `train_estimators` is the raw IDM (`function/train_estimators.m:96`). Same name, different estimator; label them differently in the paper tables.
 - `est_phys` subtracts $t_L$ also when the queue is already discharging (`sim/est_phys.m:30`).
 
 ---
@@ -760,15 +760,17 @@ One row per run, `%.4f` for every metric; an older header renames the file to `*
 
 ### 9.1 Scripts in `main/`
 
-- `main_train.m` (`main/main_train.m:14-21`): `train_estimators(1:20, 4, 720)`.
-- `main_one.m` (`main/main_one.m:19-35`): one configuration (default C4, seed 101), row with an empty study name.
-- `main_animation.m` (`main/main_animation.m:18-41`): `watch_main` for a list of configurations, nothing saved.
-- `main_figures.m` (`main/main_figures.m:10-20`): `make_figures` and `plot_sweeps`.
-- `main_all.m` (`main/main_all.m:18-65`): optional fresh start, training on seeds 1-20, main study `run_ablation(101:120, 720, true)`, figures, scenarios, sweeps on seeds 201-210, sweep figures.
+- `main_train.m` (`main/main_train.m:14-22`): `train_estimators(1:20, 4, 720)`.
+- `main_one.m` (`main/main_one.m:18-35`): one configuration (default C4, seed 101), figures and a row in `output/single_runs/`.
+- `main_animation.m` (`main/main_animation.m:17-41`): `watch_main` for a list of configurations, nothing saved.
+- `main_figures.m` (`main/main_figures.m:10-21`): `make_figures` and `plot_sweeps`.
+- `main_all.m` (`main/main_all.m:19-79`): optional fresh start (deletes the results of the steps that run again), training on seeds 1-20, main study `run_ablation(101:120, 720, true)`, figures, scenarios, sweeps on seeds 201-210, sweep figures.
+
+Every output path comes from `function/out_folder.m`: `output/1_training`, `2_main_study`, `3_figures`, `4_scenarios`, `5_stress_tests`, `single_runs`.
 
 ### 9.2 Runners in `function/`
 
-- `run_ablation.m` (`function/run_ablation.m:25-68`): seeds 101-120, 720 steps, the 12 configurations C1, V2V_MPC, C2, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE on the same traffic per seed; rows tagged `study=ablation`; optional `est_eval_run`; then `summarize_ablation`.
+- `run_ablation.m` (`function/run_ablation.m:27-72`): seeds 101-120, 720 steps, the 12 configurations C1, V2V_MPC, C2, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE on the same traffic per seed; rows tagged `study=ablation`; optional `est_eval_run`; then `summarize_ablation`.
 - `summarize_ablation.m`: last row per (study, point, seed, label) (`function/read_runs.m:13-17`), only `study=ablation` rows (lines 21-24). Per configuration and metric: $n$, mean, std, 95% CI half-width $t_{0.975, n-1}\,s/\sqrt n$ (lines 34-49). Paired comparisons B minus A on common seeds (lines 52-96): mean difference, its 95% CI, $100\,\bar d/\bar x_A$, Wilcoxon signed-rank $p$, paired $t$-test $p$; 18 pairs, 19 metrics.
 - `sweep_definitions.m` (`function/sweep_definitions.m:24-64`), `const` schedule (demand 0.4 unless swept):
 
@@ -783,9 +785,9 @@ One row per run, `%.4f` for every metric; an older header renames the file to `*
 | driver | aggressive, nominal, cautious | C1, C3, C4, C4_NOONLINE (+ estimators) | |
 | asym | 0.5, 0.65, 0.8 at demand 0.5 | C1, C3, C4 | |
 
-- `run_sweeps.m` (`function/run_sweeps.m:28-108`): seeds 201-210, resumable, then `plot_sweeps`; the study list in the header now includes `dmax` (lines 9-10, fixed in 70d8d01). `plot_sweeps` writes mean and 95% CI per point and failure limits (`function/plot_sweeps.m:106-129`): completion $< 0.8\times$ base, gap wait $> 120$ s, blocked $\ge 1$, conflicts (PET $< 1.5$ s) $\ge 1$ per run.
-- `run_scenarios.m` (`function/run_scenarios.m:16-52`): scenarios A and B, seed 1, 360 steps (180 s), C1, C2, C3, C4, logs saved.
-- `make_figures.m` (`function/make_figures.m:19-66`): representative seed = C4 run whose `fuel_rt_mL` is closest to the median; reruns C1, V2V_MPC, C2, C3, C4 without logging, plus the estimator comparison for that seed.
+- `run_sweeps.m` (`function/run_sweeps.m:28-107`): seeds 201-210, resumable, then `plot_sweeps`; the study list in the header now includes `dmax` (lines 9-10, fixed in 70d8d01). `plot_sweeps` writes mean and 95% CI per point and failure limits (`function/plot_sweeps.m:106-129`): completion $< 0.8\times$ base, gap wait $> 120$ s, blocked $\ge 1$, conflicts (PET $< 1.5$ s) $\ge 1$ per run.
+- `run_scenarios.m` (`function/run_scenarios.m:16-51`): scenarios A and B, seed 1, 360 steps (180 s), C1, C2, C3, C4, logs saved.
+- `make_figures.m` (`function/make_figures.m:20-67`): representative seed = C4 run whose `fuel_rt_mL` is closest to the median; reruns C1, V2V_MPC, C2, C3, C4 without logging, plus the estimator comparison for that seed.
 
 Seeds: training 1-16, estimator test 17-20, main study 101-120, sweeps 201-210, scenarios 1 (fixed arrivals; the seed only sets the noise streams). The random-traffic seeds are disjoint.
 
@@ -794,7 +796,6 @@ Seeds: training 1-16, estimator test 17-20, main study 101-120, sweeps 201-210, 
 - 18 comparisons x 19 metrics without a multiple-comparison correction; state which comparisons are confirmatory.
 - $n = 20$ seeds (10 per sweep point); for count metrics that are often 0 (`n_conflict`, `n_collision`) the tests are not informative.
 - The representative seed is chosen on C4's fuel only.
-- `main_one.m` writes to `output/ablation_runs.csv` with an empty study; `summarize_ablation` drops such rows only if `ablation` rows exist (line 22).
 - "Last row wins" (`function/read_runs.m:16`): a partial rerun silently replaces rows. After the 70d8d01 clock change, delete old results and retrain before running the study.
 
 ---
@@ -805,13 +806,13 @@ Ordered by how much they could change the conclusions. Each is still open at `e3
 
 1. **Time headway differs between the IDM-based baselines and the MPC configurations** (`sim/sim_run.m:272` vs `sim/ctrl_mpc.m:50`). IDM CAVs (C2, V2V_IDM) keep the drawn $T \sim U[1.2, 2.4]$ s (mean 1.8 s); every MPC CAV (C3, C4 and its variants, V2V_MPC) uses $T_c = 1.2$ s as a hard constraint. Discharge capacity therefore differs regardless of coordination, and the C2 vs C3 and C2 vs C4 differences mix the controller, the headway and the method. Either give both controllers the same headway or report V2V_IDM vs V2V_MPC (in `summarize_ablation`, but V2V_IDM is not in the default run list) to isolate it.
 2. **Safe-side oncoming bounds make the geometric margins conservative, and that is a tunable choice** (`sim/rsu_plan.m:211-225`). Since 979b6c2 and e3d786a every oncoming vehicle enters the zone at full speed and leaves from its present speed, or from rest when it is slow now or predicted to stop first. $D^a$ is the largest the geometry allows and $D^b$ is large for slow vehicles, which leaves fewer feasible slots and fewer shaping and pulling opportunities in C4, on top of $PET = 1.5$ s and the $z\sigma$ term. The size of C4's gain over C4_STRICT, C2 and C3 therefore depends on this choice. Options to state or test: the bounds as now, a predicted stop-line speed (for example from $d/lo$), or a sensitivity run with both. Vehicles that stop only inside the box without a late stop-line prediction are still not covered; safety there rests on $u$ and the on-board check.
-3. **Estimator trained on human traffic, used on CAV traffic** (`function/train_estimators.m:40`), and **which arrivals the online learner sees** (`sim/rsu_crossed.m:33-38`: vehicles delayed by 0.3 s or more, or pulled, are excluded; holds at the natural time and eco vehicles are kept since b3dfe15). Part of the C4 vs C3 gain may be online adaptation to the CAV regime rather than better modeling. Eco and held arrivals are themselves shaped by the MPC's arrival-time hold, so they are not fully natural either.
+3. **Estimator trained on human traffic, used on CAV traffic** (`function/train_estimators.m:43`), and **which arrivals the online learner sees** (`sim/rsu_crossed.m:33-38`: vehicles delayed by 0.3 s or more, or pulled, are excluded; holds at the natural time and eco vehicles are kept since b3dfe15). Part of the C4 vs C3 gain may be online adaptation to the CAV regime rather than better modeling. Eco and held arrivals are themselves shaped by the MPC's arrival-time hold, so they are not fully natural either.
 4. **Fixed 4 s baseline margin, eco messages and replanning in C2/C3** (`sim/rsu_plan.m:232`, `sim/sim_config.m:48`, `sim/rsu_plan.m:106-111`). Baseline plans can be geometrically infeasible and are rescued by the on-board check; C2/C3 also get eco times and replan when a new turner comes into range. Confirm each against [5] and the CISE paper, or state the deviations.
 5. **Optimality wording** (`sim/rsu_plan.m:245-254`, `405-416`, `261-264`). The joint search is exhaustive over pre-filtered candidate slots, with all-or-nothing pulling, and falls back to the successive search above 5000 combinations. Say "exhaustive over candidate slots" unless the pruning is made exact.
 6. **Latency model** (`sim/rsu_receive.m:7`, `sim/rsu_view.m:12`, `sim/sim_run.m:160`). Uplink latency is cancelled by constant-speed dead reckoning; only command delay is tested. Describe the latency sweep accordingly.
 7. **Metrics with survivor bias and different free-flow references** (`sim/metrics_compute.m:79-86`). Delay and fuel per trip average over exited vehicles; the free-flow time uses each vehicle's own $V_d$, capped for CAVs. Add total time spent by all arrived vehicles as a robustness metric.
 8. **Safety metric definitions** (`sim/metrics_compute.m:125-145`, `sim/sim_run.m:214-237`). Collisions are zone overlaps, and the yielding rule turns wrong turn decisions into oncoming delay. Count yield events and "could not stop" commits (`sim/sim_run.m:206`).
-9. **`idm` estimator naming** (`sim/rsu_estimate.m:53-56` vs `function/train_estimators.m:93`). The holdout table and the per-run estimator table use different "idm" estimators.
+9. **`idm` estimator naming** (`sim/rsu_estimate.m:53-56` vs `function/train_estimators.m:96`). The holdout table and the per-run estimator table use different "idm" estimators.
 10. **Human gap acceptance kinematics** (`sim/turn_gap_ok.m:55-56`, `90`). $t_{clear}$ assumes 1.5 m/s² for every turner; human turners drive with $a \in [1, 2]$ and noise. The C1 baseline's safety depends on this.
 11. **Smaller items**: plans that send nothing are still counted in `rsu.plans` and `rsu.diag` (`sim/rsu_plan.m:283-293`); the "will stop first" test classes shaped vehicles and distant left-turners as late (`sim/rsu_plan.m:223`, safe side); non-physical guards and the unreported stop-guard count (`sim/sim_run.m:298-318`, `sim/metrics_compute.m:94`); lost messages that the plan relied on (`held` vehicles, part 6).
 

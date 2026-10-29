@@ -14,12 +14,12 @@ function run_sweeps(studies, seeds)
 %   Seeds 201-210 are disjoint from the GPR training/test seeds (1-20) and
 %   from the main ablation (101-120).
 %
-%   RESUMABLE: rows already in output/sweeps/sweep_runs.csv (and
+%   RESUMABLE: rows already in output/5_stress_tests/sweep_runs.csv (and
 %   sweep_estimator.csv) are skipped, so you can stop MATLAB (Ctrl+C) and
 %   call run_sweeps again; it continues where it stopped. Delete those
 %   files to start over.
 %
-%   Output in output/sweeps/
+%   Output in output/5_stress_tests/
 %     sweep_runs.csv        one row per (study, point, seed, configuration)
 %     sweep_estimator.csv   estimator accuracy per (study, point, seed)
 %     sweep_errors.log      runs that failed
@@ -32,8 +32,7 @@ if ischar(studies) || isstring(studies), studies = cellstr(studies); end
 
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
-out = fullfile(root, 'output', 'sweeps');
-if ~exist(out, 'dir'), mkdir(out); end
+out = out_folder('sweeps');
 runs_csv = fullfile(out, 'sweep_runs.csv');
 est_csv  = fullfile(out, 'sweep_estimator.csv');
 log_path = fullfile(out, 'sweep_errors.log');

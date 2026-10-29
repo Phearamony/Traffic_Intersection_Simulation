@@ -4,12 +4,15 @@
 *.autosave
 slprj/
 *.mexw64.pdb
+octave-workspace
 
 # OS files
 Thumbs.db
 desktop.ini
 .DS_Store
 
-# run logs (results CSVs and figures are kept)
-output/ablation_errors.log
-output/run_all_log.txt
+# run logs and raw training samples (results CSVs, figures and the trained model are kept)
+output/main_all_log.txt
+output/2_main_study/ablation_errors.log
+output/5_stress_tests/sweep_errors.log
+output/1_training/estimator_samples.mat

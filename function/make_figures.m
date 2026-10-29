@@ -1,11 +1,12 @@
 function make_figures(seed, kkmax, cfgs)
 %MAKE_FIGURES  Every per-run figure of the paper, plus the multi-seed summary.
 %
-%   make_figures            % representative seed from ablation_runs.csv
+%   make_figures            % representative seed from 2_main_study/ablation_runs.csv
 %   make_figures(107)       % a seed you choose
 %   make_figures(107, 720)  % and a horizon (default 720 steps = 360 s)
 %
 %   Run AFTER run_ablation (the summary figures need its CSV).
+%   Everything goes to output/3_figures/.
 %   1. Re-runs one seed of every configuration with figures on and logging
 %      off (no rows are added to the results CSVs):
 %        EW_<fig>.png, EW_<fig>_ac.png, fuel_<fig>.png
@@ -18,8 +19,8 @@ function make_figures(seed, kkmax, cfgs)
 
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
-out = fullfile(root, 'output');
-runs_csv = fullfile(out, 'ablation_runs.csv');
+out = out_folder('figures');
+runs_csv = out_folder('study', 'ablation_runs.csv');
 if nargin < 2 || isempty(kkmax), kkmax = 720; end
 if nargin < 3 || isempty(cfgs)
     cfgs = {'C1', 'V2V_MPC', 'C2', 'C3', 'C4'};
@@ -36,13 +37,13 @@ if nargin < 1 || isempty(seed)
     fprintf('Representative seed: %d\n', seed);
 end
 
-names = {'ABL_PLOT', 'ABL_LIVE', 'ABL_NOLOG', 'ABL_KKMAX', 'ABL_SEED'};
+names = {'ABL_PLOT', 'ABL_LIVE', 'ABL_NOLOG', 'ABL_KKMAX', 'ABL_SEED', 'ABL_OUTDIR'};
 old = cellfun(@getenv, names, 'UniformOutput', false);
 oldVis = get(groot, 'DefaultFigureVisible');
 c = onCleanup(@() restore(names, old, oldVis)); %#ok<NASGU>
 abl_env_reset();
 setenv('ABL_PLOT', '1'); setenv('ABL_LIVE', '0'); setenv('ABL_NOLOG', '1');
-setenv('ABL_KKMAX', num2str(kkmax)); setenv('ABL_SEED', num2str(seed));
+setenv('ABL_KKMAX', num2str(kkmax)); setenv('ABL_SEED', num2str(seed)); setenv('ABL_OUTDIR', out);
 set(groot, 'DefaultFigureVisible', 'off');
 S = abl_settings();
 for k = 1:numel(cfgs)

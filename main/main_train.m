@@ -4,8 +4,9 @@
 % sensor would see, and fits the queue physics, the plain GPR and the
 % PI-GPR (with its uncertainty calibration). The last N_TEST seeds are held
 % out and used only to report the accuracy.
-% Writes simplot/estimators.mat (used by every RSU configuration),
-% output/gpr_holdout_metrics.csv and output/gpr_model_diagnostics.png.
+% Writes to output/1_training/: estimators.mat (the trained models, used by
+% every RSU configuration), gpr_holdout_metrics.csv (accuracy) and
+% gpr_model_diagnostics.png.
 % Run this again whenever the traffic model changes (speeds, drivers).
 
 clear; close all;

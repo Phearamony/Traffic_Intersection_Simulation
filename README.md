@@ -78,8 +78,7 @@ sim/          the simulation engine (one engine for every configuration)
 function/     settings, traffic schedule, runners (study, sweeps, scenarios, training),
               statistics and figure functions
 main/         the scripts you run (F5), see below
-simplot/      estimators.mat (written by main_train.m)
-output/       results of this version
+output/       results of this version, one folder per step (see below and output/README.md)
 docs/         CODE_REVIEW_GUIDE.md: every formula of the code with file and line numbers,
               computed example values and the open questions for review
 cise/         everything of the conference paper: v1 code, its full results, older files
@@ -140,17 +139,20 @@ Then open a script in `main/`, change the settings block at the top if you want,
 After `git pull`, start with `main_train.m`, look at one run with `main_animation.m`, then start
 `main_all.m` (with `DO_TRAIN = false` if you have just trained).
 
-Results go to `output/`:
+Results go to `output/`, one folder per step in the order `main_all.m` runs them:
 
-| File | Content |
-|---|---|
-| `ablation_runs.csv` | one row per seed and configuration (all metrics) |
-| `ablation_stats.csv`, `ablation_pairs.csv` | means with 95% CI, paired comparisons with C4 |
-| `ablation_summary.png`, `ablation_paired.png` | the study figures |
-| `EW_<fig>.png`, `EW_<fig>_ac.png`, `fuel_<fig>.png` | trajectories, accelerations, fuel of one run |
-| `estimator_runs.csv`, `estimator_comparison_*.png`, `gpr_holdout_metrics.csv`, `gpr_model_diagnostics.png` | estimator accuracy |
-| `scenarios/`, `sweeps/` | scenarios A and B, stress tests |
-| `run_all_log.txt`, `ablation_errors.log` | console log and failed runs (a failed run does not stop the study) |
+| Folder | Written by | Content |
+|---|---|---|
+| `1_training/` | `main_train.m` | `estimators.mat` (the trained model the RSU uses), `gpr_holdout_metrics.csv` (accuracy on held-out seeds), `gpr_model_diagnostics.png` |
+| `2_main_study/` | `main_all.m` step 2 | `ablation_runs.csv` (one row per seed and configuration), `ablation_stats.csv` (means, 95% CI), `ablation_pairs.csv` (paired comparisons), `estimator_runs.csv`, `ablation_errors.log` |
+| `3_figures/` | `main_all.m` step 3, `main_figures.m` | `ablation_summary.png`, `ablation_paired.png`, and for the representative seed `EW_<fig>.png` (trajectories), `EW_<fig>_ac.png` (accelerations), `fuel_<fig>.png`, `estimator_comparison_*.png` |
+| `4_scenarios/` | `main_all.m` step 4 | `scenarioA/`, `scenarioB/` (figures and logs of each configuration), `scenario_runs.csv` |
+| `5_stress_tests/` | `main_all.m` step 5 | `sweep_runs.csv`, `sweep_<study>.png`, `sweep_stats.csv`, `sweep_limits.csv` |
+| `single_runs/` | `main_one.m` | figures and `single_runs.csv` of single runs, kept apart from the study |
+| `main_all_log.txt` | `main_all.m` | the console of the whole run |
+
+`main_all.m` with `FRESH = true` deletes the old results of the steps it is about to run (the trained model is
+kept when `DO_TRAIN = false`). Every path is set in one place, `function/out_folder.m`.
 
 The functions behind the scripts (in `function/`) can also be called directly, for example
 `run_ablation(101:105)` for a quick 5-seed study, `run_sweeps('penetration')` for one stress test (resumable:

@@ -19,15 +19,18 @@ function train_estimators(seeds, n_test, kkmax)
 %   4. Test on the held-out seeds: RMSE, MAE, bias, % within 2 s / 5 s,
 %      90 % interval coverage, negative log predictive density.
 %
-%   Writes simplot/estimators.mat (theta, gpr, pigpr),
-%          output/gpr_holdout_metrics.csv, output/gpr_model_diagnostics.png
+%   Writes to output/1_training/:
+%     estimators.mat             the trained models (theta, gpr, pigpr), used by the RSU
+%     gpr_holdout_metrics.csv    accuracy on the training and held-out seeds
+%     gpr_model_diagnostics.png  held-out predictions, errors, calibration
+%     estimator_samples.mat      the collected samples
 
 if nargin < 1 || isempty(seeds), seeds = 1:20; end
 if nargin < 2 || isempty(n_test), n_test = 4; end
 if nargin < 3 || isempty(kkmax), kkmax = 720; end
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
-out = fullfile(root, 'output'); if ~exist(out, 'dir'), mkdir(out); end
+out = out_folder('training');
 
 old = getenv('ABL_SEED'); oldk = getenv('ABL_KKMAX');
 abl_env_reset();                                    % default settings for the data runs
@@ -112,9 +115,8 @@ fclose(fid);
 
 info = struct('seeds', seeds, 'n_test', n_test, 'kkmax', kkmax, 'n_train', sum(tr), ...
               'n_testsamples', sum(isTest), 'created', datestr(now));
-if ~exist(fullfile(root, 'simplot'), 'dir'), mkdir(fullfile(root, 'simplot')); end
-save(fullfile(root, 'simplot', 'estimators.mat'), 'theta', 'gpr', 'pigpr', 'info', '-v7');
-fprintf('[train_estimators] saved simplot/estimators.mat\n');
+save(fullfile(out, 'estimators.mat'), 'theta', 'gpr', 'pigpr', 'info', '-v7');
+fprintf('[train_estimators] saved output/1_training/estimators.mat\n');
 
 % ---- diagnostic figure ----
 try

@@ -50,6 +50,7 @@ for k = 1:numel(names)
     end
 end
 fclose(fid);
+if S.plot && ~exist(S.outdir, 'dir'), mkdir(S.outdir); end
 if S.plot
     try
         plot_estimators(E, S.outdir);
