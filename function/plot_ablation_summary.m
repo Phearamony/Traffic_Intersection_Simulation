@@ -74,7 +74,7 @@ for m = 1:numel(mets)
     ylabel(ax, labels{m}, 'FontSize', fs);
 end
 n_seeds = numel(unique(T.seed));
-title(tl, sprintf('Mean with 95%% CI over %d seeds (grey: one dot per seed)', n_seeds), 'FontSize', fs + 1);
+title(tl, sprintf('Mean with 95%% CI over %d seeds (gray: one dot per seed)', n_seeds), 'FontSize', fs + 1);
 exportgraphics(f1, fullfile(out_dir, 'ablation_summary.png'), 'Resolution', 300);
 close(f1);
 

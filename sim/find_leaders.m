@@ -6,7 +6,7 @@ function [gap, vl, lead, al] = find_leaders(V, G)
 %      left the lane the follower is in (its rear is still before the point
 %      where the two paths separate);
 %   2. the exit lane: both paths end on the same exit road. Positions are
-%      compared as the distance w from the centre along the exit road; a
+%      compared as the distance w from the center along the exit road; a
 %      vehicle still in its arc gets w = w_out - (s_out - s), the distance
 %      it still has to drive to the exit line. This also handles merging
 %      (a right turn and an opposite left turn into the same exit).

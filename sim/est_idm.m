@@ -9,7 +9,7 @@ function tau = est_idm(view, F, app, t, G)
 %   before the stop line follows a standing obstacle at the stop line.
 %   tau(q) is the time vehicle F.ids(q) first reaches the stop line (Inf if
 %   not within 120 s). As in the conference method, a right-turner waiting
-%   in the junction is not modelled (the RSU does not know when it goes).
+%   in the junction is not modeled (the RSU does not know when it goes).
 C = G.C; L = C.VEH_L; dt = C.DT;
 k = numel(F.ids);
 tau = inf(1, k);

@@ -7,7 +7,7 @@ function plot_scenario_frames(outdir, cfgs, times, view)
 %   Reads carlog_<label>.mat of each configuration (run_scenarios saves
 %   them) and writes scenario_frames.png: one row per configuration, one
 %   column per time. Vehicles are drawn at their real position and heading
-%   (purple = right turn, grey = left turn, blue / yellow = straight from
+%   (purple = right turn, gray = left turn, blue / yellow = straight from
 %   the west / east).
 if nargin < 2 || isempty(cfgs), cfgs = {'C1', 'C4'}; end
 if nargin < 3 || isempty(times), times = [62 68 74 80]; end

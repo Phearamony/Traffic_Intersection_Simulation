@@ -12,7 +12,7 @@ function watch_main(name, seed, varargin)
 %          C4_SPEED, C4_COOP (or the old script names, e.g. main_v2v_mpc_rsu_gpr)
 %   seed   traffic seed (default 101)
 %   extra  any ABL_* setting as name/value pairs (see abl_settings.m), and
-%          'VIEW', half-width of the view in metres (default 60)
+%          'VIEW', half-width of the view in meters (default 60)
 %   Nothing is written: no results row, no figure. Settings are restored
 %   afterwards. Cars are drawn at their real position and heading, so
 %   turns are visible; human drivers have a thick outline; a waiting

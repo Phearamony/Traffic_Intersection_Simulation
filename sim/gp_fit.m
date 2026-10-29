@@ -5,12 +5,12 @@ function M = gp_fit(X, y, opts)
 %   X  n-by-D inputs, y n-by-1 targets.
 %   opts.m       number of inducing points (default 300)
 %   opts.n_opt   points used to fit the hyperparameters (default 800)
-%   opts.iter    optimiser iterations (default 150)
+%   opts.iter    optimizer iterations (default 150)
 %   opts.seed    seed for the subsets (default 1)
 %
 %   Inputs and targets are standardised. Kernel (ARD squared exponential)
 %       k(x, x') = sf^2 exp(-1/2 sum_d (x_d - x'_d)^2 / l_d^2)
-%   Hyperparameters [log l_1..l_D, log sf, log sn] maximise the exact
+%   Hyperparameters [log l_1..l_D, log sf, log sn] maximize the exact
 %   marginal likelihood on a random subset of n_opt points (analytic
 %   gradient, fminunc). The full data then enter through the
 %   deterministic training conditional (DTC) on m inducing points Z:
@@ -45,7 +45,7 @@ try
     o = optimset('GradObj', 'on', 'MaxIter', opts.iter, 'Display', 'off', 'TolFun', 1e-6, 'TolX', 1e-6);
     h = fminunc(f, h0(:), o);
 catch err
-    fprintf(2, '[gp_fit] hyperparameter optimisation failed (%s); default values used\n', err.message);
+    fprintf(2, '[gp_fit] hyperparameter optimization failed (%s); default values used\n', err.message);
     h = h0(:);
 end
 h = h(:)';

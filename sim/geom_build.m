@@ -8,27 +8,27 @@ function G = geom_build()
 %   built for approach E and rotated for the others.
 %
 %   Path coordinate s [m] is the position of the vehicle FRONT along its
-%   path, from s = 0 at the entry (150 m before the centre). The stop line
-%   is at s = 140 (10 m before the centre) on every path.
+%   path, from s = 0 at the entry (150 m before the center). The stop line
+%   is at s = 140 (10 m before the center) on every path.
 %
-%     straight  line through the junction to 170 m past the centre
+%     straight  line through the junction to 170 m past the center
 %     right     line, circular arc of radius R_RIGHT (clockwise), line
 %     left      line, circular arc of radius R_LEFT (counter-clockwise), line
 %
 %   Right turners from opposite approaches pass each other on the inside of
-%   the centre (Japanese rule), so a mutual right turn is not a conflict.
+%   the center (Japanese rule), so a mutual right turn is not a conflict.
 %
 %   Conflict zones are computed from the geometry: two paths of different
-%   approaches conflict where their centre lines come closer than D_CONF.
+%   approaches conflict where their center lines come closer than D_CONF.
 %   For each pair the zone is an interval [z0, z1] of s on each path; a
 %   vehicle occupies the zone from the time its front reaches z0 until its
 %   rear (front - L) passes z1. Merges (two paths into the same exit lane)
-%   get a zone of MERGE_LEN metres from the first contact.
+%   get a zone of MERGE_LEN meters from the first contact.
 %
 %   G.P(k)        path k: name, app, mov, s, x, y, psi, kappa, len,
 %                 s_stop, s_div (end of the shared approach lane),
 %                 s_out (start of the exit line), w_out (its distance from
-%                 the centre), out ('E','W','N','S' = exit road direction),
+%                 the center), out ('E','W','N','S' = exit road direction),
 %                 vcurve(s) speed limit from the lateral-acceleration limit,
 %                 s_wait (right turns: waiting point), s_ff (free-flow time)
 %   G.idx.(name)  path index, e.g. G.idx.WR
@@ -147,7 +147,7 @@ p.y = C.LANE * ones(size(s));
 p.psi = zeros(size(s));
 p.kappa = zeros(size(s));
 p.s_div = s(end);            % never leaves the approach lane
-p.s_out = C.L_APP;           % exit coordinate measured from the centre
+p.s_out = C.L_APP;           % exit coordinate measured from the center
 p.w_out = 0;
 end
 
@@ -156,19 +156,19 @@ function p = pathE_turn(C, mov)
 if mov == 'R'
     R = C.R_RIGHT;
     x0 = C.LANE - R;                 % arc start x (lane y = +1.5)
-    cen = [x0, C.LANE - R];          % clockwise: centre to the right (south)
+    cen = [x0, C.LANE - R];          % clockwise: center to the right (south)
     th0 = pi/2; th1 = 0; sgn = -1;   % angle runs 90 -> 0 degrees
 else
     R = C.R_LEFT;
     x0 = -C.LANE - R;
-    cen = [x0, C.LANE + R];          % counter-clockwise: centre to the left
+    cen = [x0, C.LANE + R];          % counter-clockwise: center to the left
     th0 = -pi/2; th1 = 0; sgn = +1;
 end
 L1 = x0 + C.L_APP;                   % length of the approach line
 La = R * abs(th1 - th0);             % arc length
 ex = [cen(1) + R*cos(th1), cen(2) + R*sin(th1)];   % arc end point
-w0 = abs(ex(2));                     % distance of the arc end from the centre
-L2 = C.L_EXIT - w0;                  % exit line length to 170 m from the centre
+w0 = abs(ex(2));                     % distance of the arc end from the center
+L2 = C.L_EXIT - w0;                  % exit line length to 170 m from the center
 s = 0:C.DS:(L1 + La + L2);
 x = zeros(size(s)); y = x; psi = x; kap = x;
 for k = 1:numel(s)

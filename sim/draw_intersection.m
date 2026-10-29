@@ -3,7 +3,7 @@ function hfig = draw_intersection(V, G, t, sig, rsu, hfig, view)
 %
 %   Vehicles are drawn as rotated rectangles at their real position and
 %   heading on their path, so turns are visible as turns.
-%   Colours: straight = approach colour, left turn = grey, right turn =
+%   Colors: straight = approach color, left turn = gray, right turn =
 %   purple. Human drivers (mixed traffic) have a thick black outline. A
 %   right-turner waiting for its gap has a small yellow mark; one that the
 %   RSU has planned (go time received) a small cyan mark.
@@ -45,7 +45,7 @@ dirCol = struct('E', [0.10 0.35 0.85], 'W', [0.90 0.75 0.10], 'N', [0.85 0.15 0.
 L = C.VEH_L; W = C.VEH_W;
 for i = 1:numel(V)
     P = G.P(V(i).p);
-    [x, y, psi] = geom_pose(P, V(i).s - L/2);     % vehicle centre
+    [x, y, psi] = geom_pose(P, V(i).s - L/2);     % vehicle center
     switch V(i).mov
         case 'L', fc = [0.55 0.55 0.55];
         case 'R', fc = [0.55 0.10 0.60];

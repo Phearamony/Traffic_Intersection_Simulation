@@ -30,7 +30,7 @@ right-turner in the oncoming stream.
    `[d, v, gap, signal timing, vehicles ahead, speed ahead, right-turners ahead, prior]`. It gives a
    prediction and its uncertainty, and keeps learning online from every arrival the RSU observes.
 2. **Uncertainty-aware slot search.** The conference slot search (insert the turner before oncoming
-   vehicle *p*, minimise the summed squared delay, exhaustive over *p*), with safety margins computed from
+   vehicle *p*, minimize the summed squared delay, exhaustive over *p*), with safety margins computed from
    the real conflict-zone geometry plus a post-encroachment margin plus `z * sqrt(sigma_turner^2 + sigma_oncoming^2)`.
 3. **Arrival-time MPC.** The RSU sends target arrival times (not speeds). Each CAV solves a QP-MPC with a
    10 s horizon, jerk penalty, curve speed limits, signal timing, and the constraint "do not reach this
@@ -137,7 +137,7 @@ or `output/sweeps/sweep_errors.log` and continue.
 
 | Call | Inputs | Defaults |
 |---|---|---|
-| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_COOP (or an old script name). `VIEW`: half-width of the view in metres | `'C4'`, `101`, 60 m |
+| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_COOP (or an old script name). `VIEW`: half-width of the view in meters | `'C4'`, `101`, 60 m |
 | `train_estimators(seeds, n_test, kkmax)` | training seeds, how many of the last ones are held out, steps | `1:20`, `4`, `720` |
 | `run_ablation(seeds, kkmax, with_estimator, cfgs)` | seed list, steps, `true`/`false`, cell list of names | `101:120`, `720`, `false`, all 11 |
 | `run_sweeps(studies, seeds)` | one study name, a cell list, or `[]` for all | all studies, `201:210` |
@@ -170,7 +170,7 @@ watch_main('C4', 201, 'ABL_SCHED', 'const', 'ABL_PEN', '0.5')    % mixed traffic
 ```
 
 In the animation, cars are drawn at their real position and heading; right-turners are purple, left-turners
-grey; human drivers have a thick outline; a right-turner waiting for its gap has a yellow dot (cyan once the
+gray; human drivers have a thick outline; a right-turner waiting for its gap has a yellow dot (cyan once the
 RSU has given it a slot).
 
 Running a `main_*.m` script with F5 also works (seed 1, live animation) but **does** save figures to
@@ -181,10 +181,10 @@ ignores it once `run_ablation` rows exist). Use `watch_main` to only look.
 
 ## Model details
 
-* **Geometry.** One lane per direction, lane width 3 m, stop line 10 m before the centre, entry 150 m
-  before and exit 170 m after the centre. Right turns: arc of radius 6 m, passing inside the centre
+* **Geometry.** One lane per direction, lane width 3 m, stop line 10 m before the center, entry 150 m
+  before and exit 170 m after the center. Right turns: arc of radius 6 m, passing inside the center
   (Japanese rule), so a mutual right turn is not a conflict. Left turns: radius 4.5 m. Arc speed limited by
-  a lateral acceleration of 3 m/s^2. Conflict zones from the path geometry (centre lines closer than 2.6 m).
+  a lateral acceleration of 3 m/s^2. Conflict zones from the path geometry (center lines closer than 2.6 m).
 * **Drivers.** Every vehicle draws its own desired speed, time headway, IDM acceleration, comfortable
   deceleration and standstill gap; human drivers also draw a right-turn gap margin and have acceleration
   noise. The aggressive and cautious populations shift all of these.
