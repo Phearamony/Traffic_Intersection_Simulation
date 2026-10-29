@@ -60,6 +60,7 @@ cmp = { 'C1_human',        'C4_proposed';      % proposed vs uncoordinated
         'C4_seq',          'C4_proposed';      % joint vs successive slot search ([5])
         'C4_no_adv',       'C4_proposed';      % pulling forward
         'C4_once',         'C4_proposed';      % planning every step vs once per green
+        'C4_no_green',     'C4_proposed';      % green-time (throughput) term in the cost
         'C2_idm_rsu',      'C3I_mpc_rsu';      % controller effect, IDM estimator
         'C2G_idm_rsu_gpr', 'C3_mpc_rsu_gpr';   % controller effect, GPR estimator
         'C2_idm_rsu',      'C2G_idm_rsu_gpr';  % estimator effect, IDM control

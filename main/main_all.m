@@ -2,7 +2,7 @@
 %
 % Steps (each can be switched off below):
 %   1. train the estimators (GPR, PI-GPR, queue physics) on seeds 1-20
-%   2. main study: 12 configurations x seeds 101-120 + estimator comparison
+%   2. main study: 13 configurations x seeds 101-120 + estimator comparison
 %   3. figures of a representative seed and of the whole study
 %   4. illustrative scenarios A and B
 %   5. stress tests (demand, right-turn share, latency, loss, penetration,
@@ -27,7 +27,7 @@ TRAIN_SEEDS = 1:20;          % last 4 are the held-out test seeds
 STUDY_SEEDS = 101:120;
 SWEEP_SEEDS = 201:210;
 KKMAX       = 720;           % steps per run (720 x 0.5 s = 360 s)
-CONFIGS     = {};            % {} = the default 12 (see function/run_ablation.m)
+CONFIGS     = {};            % {} = the default 13 (see function/run_ablation.m)
 % ------------------------------------------
 
 root = fileparts(fileparts(mfilename('fullpath')));

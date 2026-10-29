@@ -58,6 +58,12 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %     J = sum over all known vehicles of both approaches of
 %         max(tau - nat, 0)^2 + w_adv min(tau - nat, 0)^2
 %     (delay, plus a small price for asking a vehicle to speed up)
+%     With cfg.green, a vehicle (not a turner) that would cross in this green
+%     (nat <= end of green) but is planned after its end is counted at the
+%     start of the next green: tau is replaced by max(tau, next green start).
+%     So green time the queue needs is not given to a turner, and a turner
+%     that blocks the vehicles behind it in its own lane is weighed against
+%     the oncoming vehicles it would delay.
 %     'opt'     the feasible joint assignment with the smallest J
 %               (exhaustive over the slots each turner could use alone,
 %               with and without pulling)
@@ -184,6 +190,14 @@ for ai = 1:2
     e.hold = ctl & e.cav & ~e.fixed & e.mov ~= 'R' & ~strict;   % may be held (arrival-time MPC)
     e.cmd = e.hold | e.hi > e.lo + 1e-6;                         % may be commanded at all
     e.onc = e.mov ~= 'R';                          % can conflict with the other turner
+    % end of this green and start of the next one (relative to t), for the
+    % cost of a vehicle pushed out of the green (cfg.green)
+    e.gpen = cfg.green && strcmp(sig.(a), 'green');
+    e.gend = inf; e.gnext = inf;
+    if e.gpen
+        e.gend = sigT.(a)(2) - (C.Y_EW(2) - C.Y_EW(1)) - t;
+        e.gnext = sigT.(a)(1) + C.CYCLE - t;
+    end
     Ln{ai} = e;
 end
 
@@ -472,6 +486,13 @@ for ai = 1:2
     end
     m = ~e.fixed;
     dd = x(m) - e.nat(m);
+    if e.gpen
+        % a vehicle that would cross in this green but is pushed past its end
+        % crosses in the next green at the earliest: count that delay
+        nm = e.nat(m); tm = e.turn(m);
+        miss = ~tm & nm <= e.gend & x(m) > e.gend + 0.01;
+        dd(miss) = max(dd(miss), e.gnext - nm(miss));
+    end
     J = J + sum(max(dd, 0).^2) + w_adv * sum(min(dd, 0).^2);
 end
 end

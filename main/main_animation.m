@@ -10,12 +10,12 @@
 %
 % Configurations: C1 (human), V2V_MPC (CAVs, no RSU), C2 ([5]), C3 (CISE),
 % C4 (proposed), C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ,
-% C4_NOADV, C4_ONCE (C4 with one part changed); also V2V_IDM, C2G, C3I.
+% C4_NOADV, C4_ONCE, C4_NOGREEN (C4 with one part changed); also V2V_IDM, C2G, C3I.
 
 clear; close all;
 
 % ---------------- settings ----------------
-CONFIGS = {'C1', 'C2', 'C3', 'C4'};   % or 'ALL' for all twelve of the study
+CONFIGS = {'C1', 'C2', 'C3', 'C4'};   % or 'ALL' for all thirteen of the study
 SEED    = 101;
 KKMAX   = 720;          % steps (720 x 0.5 s = 360 s); 240 = first 120 s only
 VIEW    = 60;           % half-width of the view [m]; 150 = whole road
@@ -26,7 +26,7 @@ root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
 if ischar(CONFIGS) && strcmpi(CONFIGS, 'ALL')
     CONFIGS = {'C1', 'V2V_MPC', 'C2', 'C3', 'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', ...
-               'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE'};
+               'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE', 'C4_NOGREEN'};
 end
 if ischar(CONFIGS), CONFIGS = {CONFIGS}; end
 extra = {'ABL_KKMAX', num2str(KKMAX), 'VIEW', VIEW};
