@@ -64,8 +64,9 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %
 %   Planning (cfg.plan)
 %     'rolling' every step, with the current predictions (proposed)
-%     'once'    once at the start of each green, for every turner known then;
-%               the same commands are repeated until the green ends ([5], CISE)
+%     'once'    at the start of each green, and again when a new turner comes
+%               into range (the RSU only sees about 150 m); in between the same
+%               commands are repeated, nothing is replanned ([5], CISE)
 %   Margins (cfg.margin)
 %     'geom'    from the conflict-zone geometry, PET and uncertainty (above)
 %     'fixed'   Db = Da = tau_safe = 4 s and h_min = 2 s ([5], CISE)
@@ -92,15 +93,19 @@ fixedM = strcmp(cfg.margin, 'fixed');
 adv = cfg.adv && ~strict;
 s_ctl = 0.3; K = 2;
 if once
-    % plan once at the start of each east-west green, then repeat
+    % plan at the start of each east-west green and when a new turner comes
+    % into range; in between, repeat the same commands (no replanning)
     [~, tg0] = signal_info(t, 'E', C);
     if ~strcmp(sig.E, 'green') && ~strcmp(sig.W, 'green')
-        rsu.once_msgs = msgs; return;
+        rsu.once_msgs = msgs; rsu.once_ids = zeros(1, 0); return;
     end
-    if rsu.once_tg0 == tg0
+    if isempty(W.ids), return; end
+    turners = W.ids(W.mov == 'R' & ~W.committed & W.s >= sStop - 120 & W.s <= sStop + 8);
+    if rsu.once_tg0 == tg0 && all(ismember(turners, rsu.once_ids))
         msgs = rsu.once_msgs; return;
     end
     rsu.once_tg0 = tg0; rsu.once_msgs = msgs;
+    rsu.once_ids = unique([rsu.once_ids, turners]);
     K = 50;                                        % every turner known now
 end
 if isempty(W.ids), return; end

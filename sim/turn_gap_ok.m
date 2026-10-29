@@ -14,7 +14,9 @@ function [ok, why] = turn_gap_ok(i, V, G, sig, mode, margin)
 %                 it); margin = reaction time + the driver's own gap margin
 %   mode 'cav'    the vehicle keeps its current acceleration (known from V2V
 %                 or on-board sensing) up to its desired speed; a braking
-%                 vehicle is taken at constant speed; margin = PET_MIN
+%                 vehicle is taken at constant speed; margin = PET_MIN; a
+%                 vehicle that has just cleared the zone must have left it
+%                 at least PET_MIN before the turner enters
 %   sig.(app)     signal state of each approach ('green','yellow','red')
 %   Opposing straight or left-turning vehicles behind an opposing right-turner that stands
 %   at its waiting point are blocked by it: they arrive at the earliest
@@ -57,7 +59,13 @@ for r = 1:size(rows, 1)
     tprev = -inf;
     for j = js
         sj = V(j).s; vj = V(j).v;
-        if sj - L > z1q, continue; end                     % already cleared
+        if sj - L > z1q
+            % already cleared; a CAV still keeps PET_MIN after its rear left
+            if strcmp(mode, 'cav') && (sj - L - z1q) / max(vj, 1) + t_enter < PET_MIN
+                ok = false; why = [V(j).id, -1, PET_MIN, sj, vj, V(j).a]; return;
+            end
+            continue;
+        end
         blocked = sj < sBlock;          % straight or left: behind the turner in its lane
         if sj < G.P(q).s_stop + 0.05
             st = sig.(G.P(q).app);

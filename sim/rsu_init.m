@@ -38,6 +38,7 @@ rsu.shp = struct('id', zeros(1, 0), 'nat', zeros(1, 0), 'tgt', zeros(1, 0), 't0'
 rsu.pul = struct('id', zeros(1, 0), 'gain', zeros(1, 0));   % pulled forward
 rsu.eco = zeros(1, 0);               % CAVs that got an eco arrival time
 rsu.once_tg0 = -inf;                 % planning once per green: green already planned
+rsu.once_ids = zeros(1, 0);          % turners already planned in this green
 rsu.once_msgs = struct('id', {}, 'vadv', {}, 'tgt', {}, 'spt', {}, 'go', {}, 'pull', {}, 'hard', {});
 rsu.plans = 0; rsu.noslot = 0; rsu.online_n = 0;
 rsu.diag = zeros(1, 4);              % joint optimizer: [plans, >=2 turners, real choice, differs from successive ([5])]
