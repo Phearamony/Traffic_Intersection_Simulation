@@ -129,7 +129,7 @@ Then open a script in `main/`, change the settings block at the top if you want,
 
 | Script | What it does | Time (MATLAB, rough) |
 |---|---|---|
-| `main_animation.m` | Live animation of one configuration. Nothing is saved | a few minutes |
+| `main_animation.m` | Live animation of the configurations you list (default C1, C2, C3, C4; `'ALL'` for all twelve), one after another on the same traffic. Close the window to skip to the next. Nothing is saved | a few minutes each |
 | `main_train.m` | Train the estimators (GPR, PI-GPR) on seeds 1-20. **Run it first, and again after any change to the traffic model** | 15-30 min |
 | `main_one.m` | Run one configuration, with or without animation, and save its figures | a few minutes |
 | `main_all.m` | Everything for the paper: training, main study (12 configurations x 20 seeds), figures, scenarios, stress tests | about a day; switch parts off in its settings |
