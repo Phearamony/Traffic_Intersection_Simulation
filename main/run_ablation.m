@@ -11,7 +11,8 @@ function run_ablation(seeds, kkmax, with_estimator, cfgs)
 %     IDM / GPR estimator, speed advice) | C3I, C3 (MPC + RSU, IDM / GPR,
 %     speed advice) | C4 proposed (MPC + RSU, PI-GPR online, uncertainty
 %     margins, arrival-time messages) | C4_NOUNC, C4_NOONLINE, C4_SPEED
-%     cooperative yielding instead of right-turn priority | C4_COOP
+%     slot rule: existing gaps only | earliest slot for the turner |
+%     first come first served | C4_STRICT, C4_GREEDY, C4_FCFS
 %     (C4 with one part switched off)
 %   All share the traffic of each seed. One row per (seed, configuration)
 %   goes to output/ablation_runs.csv; summarize_ablation() then writes
@@ -25,7 +26,8 @@ if nargin < 2 || isempty(kkmax), kkmax = 720; end
 if nargin < 3 || isempty(with_estimator), with_estimator = false; end
 if nargin < 4 || isempty(cfgs)
     cfgs = {'C1', 'V2V_IDM', 'V2V_MPC', 'C2', 'C2G', 'C3I', 'C3', ...
-            'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', 'C4_COOP'};
+            'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', ...
+            'C4_STRICT', 'C4_GREEDY', 'C4_FCFS'};
 end
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));

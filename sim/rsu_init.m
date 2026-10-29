@@ -16,7 +16,7 @@ rsu.collect = isfield(opts, 'collect') && opts.collect;
 rsu.eval = isfield(opts, 'est_eval') && opts.est_eval;
 rsu.plan = strcmp(cfg.coord, 'rsu') && ~rsu.collect && ~rsu.eval;
 rsu.known = struct('id', {}, 's', {}, 'v', {}, 'a', {}, 't', {}, 'p', {}, ...
-                   'app', {}, 'mov', {}, 'committed', {});
+                   'app', {}, 'mov', {}, 'committed', {}, 'cav', {});
 rsu.snap_every = 2.0;                % [s] snapshot interval for learning / evaluation
 rsu.pending = struct('id', {}, 't', {}, 'app', {}, 'g', {}, 'z', {}, 'z4', {}, 'tphys', {}, 'pred', {});
 rsu.samples = zeros(0, 14);          % [t_snap id app(1=E,2=W) d v gap g n vl nR prior tphys y idm]
@@ -24,6 +24,14 @@ rsu.evalrows = zeros(0, 12);         % see rsu_crossed
 rsu.lambda = 0.995;                  % forgetting factor of online learning
 rsu.h_min = 1.0;                     % [s] minimum headway between stop-line arrivals
 rsu.pet = 1.5;                       % [s] PET margin of a slot
+% gap shaping limits (rsu_plan): oncoming CAVs only
+rsu.dmax = 2.0;                      % [s] largest extra delay per vehicle (ABL_DMAX)
+if isfield(S, 'dmax'), rsu.dmax = S.dmax; end
+rsu.v_frac = 0.7;                    % never slower than this fraction of its speed
+rsu.a_shape = 1.0;                   % [m/s2] deceleration used for the limit
+rsu.d_cmd = 40;                      % [m] no new command closer to the stop line
+rsu.w_onc = 1.0;                     % weight of oncoming delay in the slot cost
+rsu.shp = struct('id', zeros(1, 0), 'nat', zeros(1, 0), 'tgt', zeros(1, 0), 't0', zeros(1, 0));
 rsu.plans = 0; rsu.noslot = 0; rsu.online_n = 0;
 rsu.theta = [2.0, 2.0, 1.5];
 rsu.gpr = []; rsu.pigpr = []; rsu.pigpr_on = [];

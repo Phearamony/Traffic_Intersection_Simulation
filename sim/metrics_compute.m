@@ -33,6 +33,12 @@ function M = metrics_compute(R)
 %     stops_per_veh                           stops per complete trip
 %     qp_solves, qp_fail_pct, guard           MPC solves / share without a
 %                                             solution; no-overlap corrections
+%     n_shaped, shape_mean_s, shape_max_s     oncoming CAVs the RSU asked to
+%                                             arrive later; extra delay asked
+%                                             (last target minus natural arrival)
+%     shape_decel                             strongest deceleration of a shaped
+%                                             vehicle from its first command to
+%                                             its stop line [m/s2, positive]
 %
 %   PET: for every right turn and every opposing vehicle sharing a conflict
 %   zone with it, each vehicle occupies the zone from the moment its front
@@ -130,6 +136,21 @@ end
 M.pet_min_s = NaN; M.pet_mean_s = NaN; M.n_conflict = 0; M.n_collision = ncol;
 if ~isempty(pet)
     M.pet_min_s = min(pet); M.pet_mean_s = mean(pet); M.n_conflict = sum(pet < 1.5);
+end
+
+% ---- gap shaping by the RSU ----
+M.n_shaped = 0; M.shape_mean_s = NaN; M.shape_max_s = NaN; M.shape_decel = NaN;
+if isfield(R, 'est') && isfield(R.est, 'shp') && ~isempty(R.est.shp.id)
+    sh = R.est.shp;
+    dly = sh.tgt - sh.nat;
+    M.n_shaped = numel(sh.id); M.shape_mean_s = mean(dly); M.shape_max_s = max(dly);
+    dec = 0;
+    sStop = G.C.L_APP - G.C.STOP;
+    for k = 1:numel(sh.id)
+        m = LOG(:, 2) == sh.id(k) & LOG(:, 1) >= sh.t0(k) & LOG(:, 3) < sStop;
+        if any(m), dec = max(dec, -min(LOG(m, 5))); end
+    end
+    M.shape_decel = dec;
 end
 end
 

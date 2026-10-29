@@ -30,6 +30,8 @@ function S = abl_settings()
 %   ABL_LAT         one-way V2X latency [s]                             (default 0)
 %   ABL_LOSS        packet loss probability per message and direction   (default 0)
 %   ABL_PEN         CAV penetration rate, 0 to 1                        (default 1)
+%   ABL_DMAX        largest extra delay the RSU may ask of one oncoming
+%                   CAV to make a gap [s]                               (default 2)
 %   ABL_SENSE       what the RSU knows about human drivers in mixed traffic:
 %                   'v2x' (default) = nothing, human cars have no V2X and are
 %                   invisible to the RSU; 'all' = RSU also senses them
@@ -59,6 +61,7 @@ S.lat      = readNum('ABL_LAT', 0);
 S.loss     = readNum('ABL_LOSS', 0);
 S.pen      = readNum('ABL_PEN', 1);
 S.sense    = lower(readStr('ABL_SENSE', 'v2x'));
+S.dmax     = readNum('ABL_DMAX', 2);
 S.estfile  = '';
 
 if ~exist(S.outdir, 'dir'), mkdir(S.outdir); end

@@ -18,13 +18,29 @@ function [rsu, msgs] = rsu_plan(rsu, W, a, t, sig, sigT, G, cfg)
 %   point (turner, starting from rest) until the vehicle front enters /
 %   its rear leaves the conflict zone, from the real path geometry;
 %   tclr_t: time until the turner's rear has left its zone.
-%   Cost J(p) = sum (tau - taubar)^2 over opposing vehicles, turner and its
-%   followers; the p with the smallest J is chosen (exhaustive, exact for
-%   one turner). Vehicles already past their stop line cannot be delayed.
-%   cfg.prio = 'law' (Road Traffic Act art. 37, right-turners yield): no
-%   oncoming vehicle may be delayed, tau_m = taubar_m; slot p is feasible
-%   only if taubar_m >= tau_t + Da_m for every m >= p (an existing gap).
-%   cfg.prio = 'coop': oncoming CAVs may be delayed as above.
+%   Gap shaping (Road Traffic Act art. 37: the turner yields; it only uses a
+%   gap that exists when it turns, checked on board). The RSU may make a gap
+%   by asking oncoming CAVs to arrive a little later, within limits:
+%     lo_m <= tau_m <= hi_m,   hi_m = nat_m + min(dmax, gentle_m)
+%   nat_m: natural arrival (prediction when first shaped); gentle_m: the
+%   delay reached by slowing to no less than v_frac of its speed, with a
+%   deceleration of at most a_shape, over half of its distance d_m; no new
+%   command once d_m < d_cmd or the vehicle is queued (v < 5 m/s). Human
+%   drivers and vehicles past the stop line cannot be asked (hi = lo), but a
+%   vehicle behind a slowed one follows it (tau_m >= tau_{m-1} + h_min). A
+%   given target is never taken back (lo_m >= that target).
+%   Cost J(p) = w_onc sum (tau_m - nat_m)^2 + (tau_t - taubar_t)^2
+%               + sum over the turner's followers (tau_f - taubar_f)^2.
+%   Rules (cfg.slot):
+%     'opt'     the feasible p with the smallest J (exhaustive, exact for one turner)
+%     'strict'  no shaping (hi = lo): existing gaps only
+%     'greedy'  the feasible p with the earliest turner time (ignores the
+%               cost to oncoming traffic)
+%     'fcfs'    first come, first served: the first feasible p at or after
+%               the turner's natural position in the arrival order
+%   The turner's own best time taubar_t is its unobstructed arrival, so it
+%   is never asked to wait longer than its slot needs; the arrival-time MPC
+%   lets it roll into the slot instead of stopping.
 %   If the turner cannot clear its zone before the yellow ends, there is no
 %   slot this green: no message, the turner clears at the end of green.
 %
@@ -102,33 +118,70 @@ for m = 1:M
     Da(m) = tclr_t - dent + rsu.pet + u;
 end
 
-law = ~isfield(cfg, 'prio') || ~strcmp(cfg.prio, 'coop');
-best = inf; bp = 0;
+% ---- shaping limits of every oncoming vehicle ----
+% lo   earliest arrival: the prediction, or the arrival time it has already
+%      been given (a shaping command is kept, never taken back)
+% nat  natural arrival: the prediction when it was first shaped
+% hi   latest arrival the RSU may ask for (CAVs only, see header)
+lo = tbar; nat = tbar; hi = tbar;
+[~, ix] = ismember(Fo.ids, W.ids);
+cav_o = [false(1, numel(oo)), W.cav(ix)];
+for m = 1:M
+    if fixed(m) || ~use(m), continue; end
+    k = find(rsu.shp.id == ids_o(m), 1);
+    if ~isempty(k)
+        lo(m) = max(tbar(m), rsu.shp.tgt(k) - t);
+        nat(m) = rsu.shp.nat(k) - t;
+    end
+    hi(m) = lo(m);
+    if ~cav_o(m) || strcmp(cfg.slot, 'strict') || movo(m) == 'R', continue; end
+    if d_o(m) < rsu.d_cmd || vo(m) < 5, continue; end        % too close or queued
+    % slow down by at most 30 %, decelerating at most a_shape over half the distance
+    r = 1 - sqrt(max(0, 1 - rsu.a_shape * d_o(m) / vo(m)^2));
+    r = min(r, 1 - rsu.v_frac);
+    cap = min(rsu.dmax, 0.5 * d_o(m) / vo(m) * (1 / (1 - r) - 1));
+    hi(m) = max(lo(m), nat(m) + cap);
+end
+for m = 2:M                                    % keep the order in the lane
+    if use(m) && use(m-1) && ~fixed(m), lo(m) = max(lo(m), lo(m-1) + rsu.h_min); end
+end
+hi = max(hi, lo);
+
+% ---- slot search: the turner before oncoming vehicle p, p = 1..M+1 ----
+best = inf; bp = 0; btt = inf; cand = zeros(0, 3);
 for p = 1:M+1
     tt = tbar_t;
     for m = 1:min(p-1, M)
-        if cons(m), tt = max(tt, tbar(m) + Db(m)); end
+        if cons(m), tt = max(tt, lo(m) + Db(m)); end
     end
-    tau = tbar; ok = true; prev = -inf;
-    if law
-        % existing gaps only: every later oncoming vehicle keeps its time
-        for m = p:M
-            if use(m) && cons(m) && tbar(m) < tt + Da(m) - 0.01, ok = false; break; end
-        end
-    end
-    for m = p:M
-        if law, break; end
+    tau = lo; ok = true; prev = -inf;
+    for m = 1:M
         if ~use(m), continue; end
-        lo = max(tbar(m), prev + rsu.h_min);
-        if cons(m), lo = max(lo, tt + Da(m)); end
-        if fixed(m) && lo > tbar(m) + 0.01, ok = false; break; end
-        tau(m) = lo; prev = lo;
+        if m < p, prev = tau(m); continue; end
+        need = lo(m);
+        if cons(m), need = max(need, tt + Da(m)); end
+        pushed = max(lo(m), prev + rsu.h_min);        % car following behind a slowed car
+        if need > hi(m) + 0.01 && pushed < need - 0.01
+            ok = false; break;                        % would need more than allowed
+        end
+        tau(m) = max(need, pushed);
+        if fixed(m) && tau(m) > lo(m) + 0.01, ok = false; break; end
+        prev = tau(m);
     end
     if ~ok, continue; end
     tf = tbar_f; pv = tt;
     for f = 1:numel(tf), tf(f) = max(tf(f), pv + rsu.h_min); pv = tf(f); end
-    J = sum((tau(use) - tbar(use)).^2) + (tt - tbar_t)^2 + sum((tf - tbar_f).^2);
-    if J < best, best = J; bp = p; btau = tau; btt = tt; end
+    J = rsu.w_onc * sum((tau(use) - nat(use)).^2) + (tt - tbar_t)^2 + sum((tf - tbar_f).^2);
+    cand(end+1, :) = [p, tt, J]; %#ok<AGROW>
+    keep = false;
+    switch cfg.slot
+        case {'opt', 'strict'}, keep = J < best;
+        case 'greedy',          keep = tt < btt - 1e-9 || (abs(tt - btt) < 1e-9 && J < best);
+        case 'fcfs'
+            p0 = 1 + sum(nat(use) < tbar_t);          % arrival order
+            keep = p >= p0 && bp == 0;                % first feasible slot from there
+    end
+    if keep, best = J; bp = p; btau = tau; btt = tt; end
 end
 if bp == 0, return; end
 rsu.plans = rsu.plans + 1;
@@ -141,8 +194,16 @@ end
 vadv = NaN; if btt > 0.5, vadv = (P.s_wait - W.s(it)) / btt; end
 msgs(end+1) = struct('id', W.ids(it), 'vadv', vadv, 'tgt', t + btt, 'spt', P.s_wait, 'go', t + btt);
 for m = 1:M
-    if fixed(m) || ~use(m) || movo(m) == 'R', continue; end   % never message the other turner
-    if btau(m) - tbar(m) >= 0.5
+    if fixed(m) || ~use(m) || ~cav_o(m) || movo(m) == 'R', continue; end   % never the other turner
+    k = find(rsu.shp.id == ids_o(m), 1);
+    held = ~isempty(k) && t < rsu.shp.tgt(k);         % keep repeating a given target
+    if btau(m) - lo(m) >= 0.3 || held
+        if isempty(k)
+            rsu.shp.id(end+1) = ids_o(m); rsu.shp.nat(end+1) = t + nat(m);
+            rsu.shp.tgt(end+1) = t + btau(m); rsu.shp.t0(end+1) = t;
+        else
+            rsu.shp.tgt(k) = max(rsu.shp.tgt(k), t + btau(m));
+        end
         tg = t + btau(m);
         if ~strcmp(cfg.msg, 'time'), tg = NaN; end     % speed advice only: no binding time
         msgs(end+1) = struct('id', ids_o(m), 'vadv', d_o(m) / max(btau(m), 0.5), ...

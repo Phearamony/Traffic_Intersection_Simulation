@@ -78,11 +78,15 @@ archive/      v1 code of the conference paper and older files (see archive/READM
 | C4_NOUNC | | as C4, fixed margins | | | |
 | C4_NOONLINE | | as C4, no online learning | | | |
 | C4_SPEED | | as C4, speed messages | | | |
-| C4_COOP | | as C4, cooperative yielding (oncoming CAVs may be asked to arrive later) | | | |
+| C4_STRICT | | as C4, existing gaps only (no oncoming CAV is asked to slow) | | | |
+| C4_GREEDY | | as C4, slot rule: earliest slot for the turner | | | |
+| C4_FCFS | | as C4, slot rule: first come, first served | | | |
 
-Right-turn priority: all configurations follow the Road Traffic Act (art. 37), right-turners yield to
-oncoming straight and left-turning traffic. The RSU only finds and times existing gaps; it never delays an
-oncoming vehicle. C4_COOP is the exception, to show what cooperative yielding would add.
+Right-turn priority: every configuration follows the Road Traffic Act (art. 37). The right-turner yields:
+its on-board check only lets it turn into a gap that exists. The RSU may make such a gap by asking oncoming
+CAVs to arrive a little later, within the same limits for every RSU configuration: at most `ABL_DMAX`
+(2 s) per vehicle, never slower than 0.7 of its speed, about 1 m/s^2, no new command within 40 m of the
+stop line. Human drivers have no V2X: the RSU cannot see or instruct them.
 
 Every configuration shares the same roads, traffic, driver parameters, signal plan, spawning and metrics;
 only the switches in `sim/sim_config.m` differ.
@@ -137,7 +141,7 @@ or `output/sweeps/sweep_errors.log` and continue.
 
 | Call | Inputs | Defaults |
 |---|---|---|
-| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_COOP (or an old script name). `VIEW`: half-width of the view in meters | `'C4'`, `101`, 60 m |
+| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_GREEDY, C4_FCFS (or an old script name). `VIEW`: half-width of the view in meters | `'C4'`, `101`, 60 m |
 | `train_estimators(seeds, n_test, kkmax)` | training seeds, how many of the last ones are held out, steps | `1:20`, `4`, `720` |
 | `run_ablation(seeds, kkmax, with_estimator, cfgs)` | seed list, steps, `true`/`false`, cell list of names | `101:120`, `720`, `false`, all 11 |
 | `run_sweeps(studies, seeds)` | one study name, a cell list, or `[]` for all | all studies, `201:210` |
