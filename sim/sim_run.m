@@ -60,7 +60,7 @@ for a = 1:numel(apps)
     v0 = vehTemplate();
     v0.id = nextId.(ap); nextId.(ap) = nextId.(ap) + 1;
     v0.app = ap; v0.mov = 'S'; v0.p = G.idx.([ap 'S']);
-    v0.v = 20; v0.isCAV = ~strcmp(cfg.coord, 'none') && S.pen > 0;
+    v0.v = 12; v0.isCAV = ~strcmp(cfg.coord, 'none') && S.pen > 0;
     v0.t_arr = 0; v0.t_spawn = 0;
     V(end+1) = v0; %#ok<AGROW>
 end
@@ -99,6 +99,7 @@ for KK = 1:KKmax
         nv.amax = sched.([ap '_A'])(KK); nv.bc = sched.([ap '_B'])(KK);
         nv.s0 = sched.([ap '_S0'])(KK);  nv.hm = sched.([ap '_HM'])(KK);
         nv.isCAV = ~strcmp(cfg.coord, 'none') && sched.([ap '_U'])(KK) < S.pen;
+        if nv.isCAV, nv.Vd = min(nv.Vd, C.V_LIM); end      % a CAV keeps the speed limit
         nv.t_arr = t;
         Q.(ap)(end+1) = nv;
     end
@@ -365,7 +366,7 @@ end
 % ======================================================================
 function v = vehTemplate()
 v = struct('id', 0, 'app', 'E', 'mov', 'S', 'p', 1, 's', 0, 'v', 0, 'a', 0, ...
-    'Vd', 25, 'T', 1.3, 'amax', 1.5, 'bc', 2.5, 's0', 2.0, 'hm', 2.0, 'isCAV', false, ...
+    'Vd', 13, 'T', 1.3, 'amax', 1.5, 'bc', 2.5, 's0', 2.0, 'hm', 2.0, 'isCAV', false, ...
     't_arr', 0, 't_spawn', NaN, 't_stop', NaN, 't_exit', NaN, 'exited', false, 'entered', true, ...
     'fuel', 0, 'dist', 0, 'idle_gap', 0, 'idle_red', 0, 'idle_other', 0, 'jerk2', 0, 'nstep', 0, ...
     'nstops', 0, 'stopped', false, 'committed', false, 'go', false, ...

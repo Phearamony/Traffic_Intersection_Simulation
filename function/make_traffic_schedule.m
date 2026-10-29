@@ -24,18 +24,19 @@ function sched = make_traffic_schedule(S, KKmax, dt, DemandStages, lambdaNS_axis
 %
 %   DRIVERS (desired speed U[a,b] m/s, time headway U[c,d] s; IDM a, b, s0;
 %   human gap margin hm)
-%     nominal      Vd U[23,29], Th U[1.2,2.4], a U[1.0,2.0], b U[1.5,3.0],
-%                  s0 U[1.5,2.5], hm U[1.5,3.0]   (training distribution)
-%     aggressive   Vd U[26,32], Th U[0.8,1.6], a U[1.5,2.5], b U[2.5,3.5],
-%                  s0 U[1.0,2.0], hm U[0.8,2.0]
-%     cautious     Vd U[18,24], Th U[1.8,3.0], a U[0.7,1.4], b U[1.2,2.2],
-%                  s0 U[2.0,3.0], hm U[2.5,4.0]
+%   (urban road, speed limit 50 km/h; CAVs never exceed the limit)
+%     nominal      Vd U[11.1,14.4] (40-52 km/h), Th U[1.2,2.4], a U[1.0,2.0],
+%                  b U[1.5,3.0], s0 U[1.5,2.5], hm U[1.5,3.0]   (training distribution)
+%     aggressive   Vd U[12.5,15.3] (45-55 km/h), Th U[0.8,1.6], a U[1.5,2.5],
+%                  b U[2.5,3.5], s0 U[1.0,2.0], hm U[0.8,2.0]
+%     cautious     Vd U[9.7,12.5] (35-45 km/h), Th U[1.8,3.0], a U[0.7,1.4],
+%                  b U[1.2,2.2], s0 U[2.0,3.0], hm U[2.5,4.0]
 %   The extra driver parameters come from their own stream (seed
 %   7e5 + seed), so arrivals, turns, Vd and Th are unchanged.
 %
 %   SCENARIOS (fixed before any result was seen; times in s from the start).
 %   The east-west signal is green from 60 s to 114.5 s. Every vehicle has
-%   Vd = 25 m/s and Th = 1.5 s. Only the east-west corridor is used.
+%   Vd = 13 m/s (47 km/h) and Th = 1.5 s. Only the east-west corridor is used.
 %   Every main script also places one straight vehicle on each approach at
 %   t = 0 (default Vd and Th); in the scenarios these two wait at the red
 %   and lead their queues when the green starts.
@@ -93,9 +94,9 @@ end
 
 % ---------------- random traffic ----------------
 switch S.driver
-    case 'nominal',    vd = [23 6]; th = [1.2 1.2];
-    case 'aggressive', vd = [26 6]; th = [0.8 0.8];
-    case 'cautious',   vd = [18 6]; th = [1.8 1.2];
+    case 'nominal',    vd = [11.1 3.3]; th = [1.2 1.2];    % 40-52 km/h
+    case 'aggressive', vd = [12.5 2.8]; th = [0.8 0.8];    % 45-55 km/h
+    case 'cautious',   vd = [9.7 2.8];  th = [1.8 1.2];    % 35-45 km/h
     otherwise, error('make_traffic_schedule: unknown driver type %s', S.driver);
 end
 
@@ -151,7 +152,7 @@ for t = times
     sched.([d '_intent'])(kk)    = true;
     sched.([d '_TurnLeft'])(kk)  = false;
     sched.([d '_TurnRight'])(kk) = isRight;
-    sched.([d '_Vd'])(kk)        = 25;
+    sched.([d '_Vd'])(kk)        = 13;
     sched.([d '_Th'])(kk)        = 1.5;
     sched.([d '_U'])(kk)         = 0;      % every vehicle is a CAV
 end

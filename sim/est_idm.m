@@ -4,7 +4,7 @@ function tau = est_idm(view, F, app, t, G)
 %   tau = est_idm(view, F, app, t, G)
 %   The RSU simulates the known vehicles of the approach forward with
 %   nominal IDM parameters (a = 1.5, b = 2.5, s0 = 2 m, T = 1.5 s,
-%   v0 = 25 m/s), dt = 0.5 s, for up to 120 s, with the signal plan:
+%   v0 = C.V_DES0 = 12.8 m/s), dt = 0.5 s, for up to 120 s, with the signal plan:
 %   during red, and during yellow when it can still stop, the first vehicle
 %   before the stop line follows a standing obstacle at the stop line.
 %   tau(q) is the time vehicle F.ids(q) first reaches the stop line (Inf if
@@ -17,7 +17,7 @@ if k == 0, return; end
 sStop = C.L_APP - C.STOP;
 sObs = inf;
 s = sStop - F.d; v = F.v;                      % closest first
-a0 = 1.5; b0 = 2.5; s00 = 2.0; T0 = 1.5; v0 = 25;
+a0 = 1.5; b0 = 2.5; s00 = 2.0; T0 = 1.5; v0 = C.V_DES0;
 done = false(1, k);
 for step = 1:240
     tt = t + (step - 1) * dt;

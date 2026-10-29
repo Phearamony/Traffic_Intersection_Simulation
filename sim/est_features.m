@@ -40,7 +40,7 @@ g = signal_feature(t, app);
 k = numel(idx);
 F.ids = view.ids(idx); F.d = sStop - view.s(idx); F.v = view.v(idx);
 F.mov = view.mov(idx);
-F.gap = zeros(1, k); F.n = zeros(1, k); F.vl = 25 * ones(1, k); F.g = g * ones(1, k);
+F.gap = zeros(1, k); F.n = zeros(1, k); F.vl = C.V_LIM * ones(1, k); F.g = g * ones(1, k);
 F.nR = zeros(1, k);
 sb = view.s(blocking); vb = view.v(blocking); rb = view.mov(blocking) == 'R';
 for q = 1:k

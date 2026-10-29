@@ -10,7 +10,7 @@ function tau = est_phys(d, v, n, t, tg0, tend, theta, C)
 %             headway, acceleration of the kinematic part
 %
 %   kinematic   tau_kin = time to cover d from v, accelerating at a_p up to
-%               25 m/s
+%               the typical desired speed C.V_DES0
 %   queue       tau_q   = max(tg0 - t + t_L, 0) + n h_s
 %               (the queue starts t_L after green; the n vehicles ahead
 %               pass the stop line h_s apart)
@@ -22,7 +22,7 @@ tL = theta(1); hs = theta(2); ap = theta(3);
 d = d(:)'; v = v(:)'; n = n(:)';
 e = ones(size(d));
 t = t(:)' .* e; tg0 = tg0(:)' .* e; tend = tend(:)' .* e;
-tk = travel_time_vec(d, v, ap, 25);
+tk = travel_time_vec(d, v, ap, C.V_DES0);
 tq = max(tg0 - t + tL, 0) + n * hs;
 tau = max(tk, tq);
 late = t + tau > tend;
