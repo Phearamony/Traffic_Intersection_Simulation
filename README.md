@@ -78,6 +78,11 @@ archive/      v1 code of the conference paper and older files (see archive/READM
 | C4_NOUNC | | as C4, fixed margins | | | |
 | C4_NOONLINE | | as C4, no online learning | | | |
 | C4_SPEED | | as C4, speed messages | | | |
+| C4_COOP | | as C4, cooperative yielding (oncoming CAVs may be asked to arrive later) | | | |
+
+Right-turn priority: all configurations follow the Road Traffic Act (art. 37), right-turners yield to
+oncoming straight and left-turning traffic. The RSU only finds and times existing gaps; it never delays an
+oncoming vehicle. C4_COOP is the exception, to show what cooperative yielding would add.
 
 Every configuration shares the same roads, traffic, driver parameters, signal plan, spawning and metrics;
 only the switches in `sim/sim_config.m` differ.
@@ -106,7 +111,7 @@ or step by step:
 | 0 (optional) | `watch_main('C4')` | Live animation of one configuration, nothing saved | none |
 | 1 | `train_estimators` | Collect data (seeds 1-20, human drivers) and fit the queue physics, GPR and PI-GPR | `simplot/estimators.mat`, `output/gpr_holdout_metrics.csv`, `output/gpr_model_diagnostics.png` |
 | 2 | fresh start (below) | Remove old results | |
-| 3 | `run_ablation(101:105)` | Quick test: 5 seeds x 11 configurations | rows in `output/ablation_runs.csv` |
+| 3 | `run_ablation(101:105)` | Quick test: 5 seeds x 12 configurations | rows in `output/ablation_runs.csv` |
 | 4 | `run_ablation(101:120, 720, true)` | Main ablation, 20 seeds + estimator comparison | `ablation_runs.csv`, `ablation_stats.csv`, `ablation_pairs.csv`, `estimator_runs.csv` |
 | 5 | `make_figures` | Per-run figures of a typical seed + multi-seed summary | `EW_*.png`, `EW_*_ac.png`, `fuel_*.png`, `estimator_comparison_*.png`, `ablation_summary.png`, `ablation_paired.png` |
 | 6 | `run_scenarios` | Illustrative scenarios A and B | `output/scenarios/` |
@@ -132,7 +137,7 @@ or `output/sweeps/sweep_errors.log` and continue.
 
 | Call | Inputs | Defaults |
 |---|---|---|
-| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED (or an old script name). `VIEW`: half-width of the view in metres | `'C4'`, `101`, 60 m |
+| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_COOP (or an old script name). `VIEW`: half-width of the view in metres | `'C4'`, `101`, 60 m |
 | `train_estimators(seeds, n_test, kkmax)` | training seeds, how many of the last ones are held out, steps | `1:20`, `4`, `720` |
 | `run_ablation(seeds, kkmax, with_estimator, cfgs)` | seed list, steps, `true`/`false`, cell list of names | `101:120`, `720`, `false`, all 11 |
 | `run_sweeps(studies, seeds)` | one study name, a cell list, or `[]` for all | all studies, `201:210` |

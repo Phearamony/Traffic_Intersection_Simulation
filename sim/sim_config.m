@@ -21,10 +21,15 @@ function cfg = sim_config(name)
 %   online  1 = PI-GPR learns from every observed arrival during the run
 %   spat    1 = the controller knows the signal timing (V2I); 0 = only the
 %           current light
+%   prio    'law'   right-turn priority of the Road Traffic Act (art. 37):
+%                   the RSU never delays oncoming straight or left-turning
+%                   vehicles; the turner only uses gaps that exist
+%           'coop'  cooperative yielding: the RSU may ask oncoming CAVs to
+%                   arrive later so the turner can go first
 %   label   results label;  fig  suffix of the figure names
 
 c = struct('ctrl', 'idm', 'coord', 'none', 'est', 'idm', 'msg', 'speed', ...
-           'unc_z', 0, 'online', 0, 'spat', 0, 'label', '', 'fig', '', 'name', name);
+           'unc_z', 0, 'online', 0, 'spat', 0, 'prio', 'law', 'label', '', 'fig', '', 'name', name);
 switch upper(name)
     case 'C1'
         c.label = 'C1_human';        c.fig = 'human';
@@ -58,6 +63,9 @@ switch upper(name)
     case 'C4_SPEED'
         c = sim_config('C4'); c.msg = 'speed';
         c.label = 'C4_speed_adv';    c.fig = 'proposed_speed_adv';
+    case 'C4_COOP'
+        c = sim_config('C4'); c.prio = 'coop';
+        c.label = 'C4_coop';         c.fig = 'proposed_coop';
     otherwise
         error('sim_config: unknown configuration %s', name);
 end

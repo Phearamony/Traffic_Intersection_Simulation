@@ -6,7 +6,7 @@ function run_all(fresh, train)
 %   run_all(true, false)   % fresh start but keep the trained estimators
 %
 %   Steps: estimator training (seeds 1-20), main ablation (seeds 101-120,
-%   11 configurations + estimator comparison), figures, scenarios, all
+%   12 configurations + estimator comparison), figures, scenarios, all
 %   stress tests (seeds 201-210), sweep figures.
 %   A failed step is logged and the next step still runs.
 %   Console output is saved to output/run_all_log.txt (one line per run).

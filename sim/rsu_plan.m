@@ -21,6 +21,10 @@ function [rsu, msgs] = rsu_plan(rsu, W, a, t, sig, sigT, G, cfg)
 %   Cost J(p) = sum (tau - taubar)^2 over opposing vehicles, turner and its
 %   followers; the p with the smallest J is chosen (exhaustive, exact for
 %   one turner). Vehicles already past their stop line cannot be delayed.
+%   cfg.prio = 'law' (Road Traffic Act art. 37, right-turners yield): no
+%   oncoming vehicle may be delayed, tau_m = taubar_m; slot p is feasible
+%   only if taubar_m >= tau_t + Da_m for every m >= p (an existing gap).
+%   cfg.prio = 'coop': oncoming CAVs may be delayed as above.
 %   If the turner cannot clear its zone before the yellow ends, there is no
 %   slot this green: no message, the turner clears at the end of green.
 %
@@ -98,6 +102,7 @@ for m = 1:M
     Da(m) = tclr_t - dent + rsu.pet + u;
 end
 
+law = ~isfield(cfg, 'prio') || ~strcmp(cfg.prio, 'coop');
 best = inf; bp = 0;
 for p = 1:M+1
     tt = tbar_t;
@@ -105,7 +110,14 @@ for p = 1:M+1
         if cons(m), tt = max(tt, tbar(m) + Db(m)); end
     end
     tau = tbar; ok = true; prev = -inf;
+    if law
+        % existing gaps only: every later oncoming vehicle keeps its time
+        for m = p:M
+            if use(m) && cons(m) && tbar(m) < tt + Da(m) - 0.01, ok = false; break; end
+        end
+    end
     for m = p:M
+        if law, break; end
         if ~use(m), continue; end
         lo = max(tbar(m), prev + rsu.h_min);
         if cons(m), lo = max(lo, tt + Da(m)); end
