@@ -23,6 +23,10 @@ function [ok, why] = turn_gap_ok(i, V, G, sig, mode, margin)
 %   after it has left their lane, and a blocked vehicle that can still stop
 %   before the conflict zone yields to a turner already in the junction, so
 %   it is ignored (this is what allows a mutual right turn).
+%   In mode 'cav', opposing vehicles also keep the order of their shared
+%   approach lane: a vehicle cannot reach the junction before the vehicle
+%   ahead of it in that lane has left the lane, whatever path either takes
+%   (a straight vehicle behind a stopped or held left-turner is not free).
 
 PET_MIN = 1.5;
 why = [];
@@ -48,6 +52,30 @@ if ~isempty(wt)
     [sBlock, kb] = max([V(wt).s]);
     vto = min(Po.vcurve(Po.kappa > 0));
     t_vac = travel_time(Po.s_div + L - V(wt(kb)).s, 0, 1.5, vto);
+end
+% shared approach lane of the opposite approach (mode 'cav'): the earliest
+% time each vehicle can leave it (front at s_div), in lane order
+leaveAhead = containers.Map('KeyType', 'double', 'ValueType', 'double');
+if strcmp(mode, 'cav')
+    % the lane is shared up to the first point where a path leaves it
+    sDiv = min([Po.s_div, G.P(G.idx.([oa 'L'])).s_div, G.P(G.idx.([oa 'S'])).s_div]);
+    ln = find([V.app] == oa & [V.s] < sDiv);
+    [~, o] = sort([V(ln).s], 'descend'); ln = ln(o);
+    tl = -inf;
+    for u = ln
+        leaveAhead(V(u).id) = tl;                  % the vehicle ahead leaves the lane at tl
+        if strcmp(sig.(oa), 'red') && V(u).s < G.P(V(u).p).s_stop, tl = inf; continue; end
+        vu = V(u).v; au = max(V(u).a, 0);
+        if vu < 2, au = max(au, 1.5); end
+        tu = travel_time(sDiv - V(u).s, vu, au, max(V(u).Vd, vu));
+        m = V(u).msg;
+        if ~isempty(fieldnames(m)) && isfield(m, 'hard') && m.hard && isfinite(m.tgt) && V(u).s < m.spt ...
+                && tnow(V) < m.tgt && tnow(V) - V(u).msg_rx <= 10
+            tu = max(tu, (m.tgt - tnow(V)) + max(sDiv - m.spt, 0) / max(vu, 6));
+        end
+        if V(u).mov == 'R' && V(u).s >= Po.s_stop - 0.05, tu = max(tu, t_vac); end
+        tl = max(tu, tl + 1.0);
+    end
 end
 for r = 1:size(rows, 1)
     q = rows(r, 1); z0q = rows(r, 4); z1q = rows(r, 5);
@@ -99,6 +127,7 @@ for r = 1:size(rows, 1)
         end
         % a vehicle cannot pass the one ahead of it in its lane
         t_arr = max(t_arr, tprev + 1.0);
+        if isKey(leaveAhead, V(j).id), t_arr = max(t_arr, leaveAhead(V(j).id) + 1.0); end
         tprev = t_arr;
         % passes completely before the turner gets there
         t_out = t_arr + (z1q - max(sj, z0q) + L) / max(vj, 3);

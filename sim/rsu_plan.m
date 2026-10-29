@@ -138,6 +138,9 @@ for ai = 1:2
         if W.mov(r) == 'R'
             if W.committed(r) || W.s(r) > P.s_wait + 0.05, continue; end
             lo = travel_time(P.s_wait - W.s(r), W.v(r), 1.5, vt);
+            % at its waiting point (the engine's 0.3 m): it can leave now; a
+            % positive time here would be re-planned every step and never come
+            if P.s_wait - W.s(r) < 0.3, lo = 0; end
             e = addE(e, W.ids(r), 'R', W.cav(r), false, 0, W.v(r), W.s(r), lo, 0.3, true);
         else
             qz = rowFor(rowsO, G, a, W.mov(r));
@@ -319,6 +322,20 @@ if any(noslot)
     sl2 = best.sl; sl2(noslot) = 0;
     [ok2, R2] = evalBest(Ln, T, sl2, h, adv, rsu.w_adv);
     if ok2, R2.sl = sl2; best = R2; else, shapeOK = false; end
+end
+DBG = str2num(getenv('RSU_DEBUG')); %#ok<ST2NM>  % TEMP DEBUG
+if numel(DBG) == 2 && t >= DBG(1) && t <= DBG(2)
+    for k = 1:nT
+        e = Ln{T(k).ai}; f = Ln{3 - T(k).ai};
+        fprintf('PLAN t %.1f turner %d slots %s chosen %d tau %.2f noslot %d ok %d | opp:', t, T(k).id, ...
+            mat2str(S{k}), best.sl(k), best.tau{T(k).ai}(T(k).i), noslot(k), shapeOK);
+        for j = T(k).cidx
+            fprintf(' %d(lo %.1f x %.1f %s%s%s)', f.id(j), f.lo(j), best.tau{3 - T(k).ai}(j), ...
+                char('F' * f.fixed(j) + ' ' * ~f.fixed(j)), char('Y' * f.yld(j) + ' ' * ~f.yld(j)), ...
+                char('H' * best.held{3 - T(k).ai}(j) + ' ' * ~best.held{3 - T(k).ai}(j)));
+        end
+        fprintf('\n');
+    end
 end
 if ~shapeOK                                       % no consistent plan this step: send nothing
     if once, rsu.once_tg0 = -inf; end            % and try again next step
