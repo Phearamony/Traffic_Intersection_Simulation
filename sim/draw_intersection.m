@@ -11,6 +11,9 @@ function hfig = draw_intersection(V, G, t, sig, rsu, hfig, view)
 
 if nargin < 7 || isempty(view), view = 60; end
 C = G.C;
+if ~isempty(hfig) && ~ishandle(hfig) && ~isempty(getenv('ABL_WATCH_LABEL'))
+    error('watch:closed', 'animation window closed');   % main_animation: go to the next one
+end
 if isempty(hfig) || ~ishandle(hfig)
     hfig = figure('Color', 'w', 'Name', 'Intersection');
 end
@@ -62,7 +65,8 @@ for i = 1:numel(V)
         plot(x, y, 'o', 'MarkerSize', 4, 'MarkerFaceColor', mk, 'MarkerEdgeColor', 'k');
     end
 end
-title(sprintf('t = %5.1f s', t));
+lab = getenv('ABL_WATCH_LABEL');               % set by watch_main
+if isempty(lab), title(sprintf('t = %5.1f s', t)); else, title(sprintf('%s   t = %5.1f s', lab, t), 'Interpreter', 'none'); end
 set(gca, 'XTick', [], 'YTick', []); box on;
 drawnow;
 end

@@ -28,7 +28,7 @@ oldNames = struct('main_human_driving', 'C1', 'main_human_driving_plot', 'C1', .
 if isfield(oldNames, name), name = oldNames.(name); end
 if strcmpi(name, 'HUMAN'), name = 'C1'; end
 view = 60;
-names = {'ABL_SEED', 'ABL_PLOT', 'ABL_LIVE', 'ABL_NOLOG', 'ABL_SAVELOG'};
+names = {'ABL_SEED', 'ABL_PLOT', 'ABL_LIVE', 'ABL_NOLOG', 'ABL_SAVELOG', 'ABL_WATCH_LABEL'};
 extra = cell(0, 2);
 for i = 1:2:numel(varargin)
     if strcmpi(varargin{i}, 'VIEW'), view = varargin{i+1}; continue; end
@@ -46,6 +46,7 @@ end
 S = abl_settings();
 cfg = sim_config(name);
 fprintf('\n=== watching %s | seed %d | nothing is saved ===\n', cfg.label, seed);
+setenv('ABL_WATCH_LABEL', sprintf('%s (seed %d)', cfg.label, seed));
 R = sim_run(name, S, struct('live', true, 'view', view)); %#ok<NASGU>
 end
 
