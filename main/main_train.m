@@ -19,4 +19,5 @@ KKMAX  = 720;       % steps per run (360 s)
 
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
+clean_old_output();                  % files of the older layout of output/, simplot/
 train_estimators(SEEDS, N_TEST, KKMAX);

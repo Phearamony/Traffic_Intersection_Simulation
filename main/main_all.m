@@ -35,24 +35,17 @@ addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
 out = out_folder('');
 abl_env_reset();
 
+clean_old_output();                  % files of the older flat layout, simplot/
 if FRESH
     % results of the steps that will run again (the trained model is kept
-    % unless DO_TRAIN), and files of the older flat layout of output/
+    % unless DO_TRAIN)
     kinds = {'training', 'study', 'figures', 'scenarios', 'sweeps'};
     on = [DO_TRAIN, DO_STUDY, DO_FIGURES, DO_SCEN, DO_SWEEPS];
     for k = find(on)
         d = out_folder(kinds{k}, '');
         if exist(d, 'dir'), rmdir(d, 's'); end
     end
-    old = dir(out);
-    for k = 1:numel(old)
-        nm = old(k).name;
-        if any(strcmp(nm, {'.', '..', 'README.md'})) || any(strcmp(nm, {'1_training', '2_main_study', ...
-                '3_figures', '4_scenarios', '5_stress_tests', 'single_runs'}))
-            continue;
-        end
-        if old(k).isdir, rmdir(fullfile(out, nm), 's'); else, delete(fullfile(out, nm)); end
-    end
+    if exist(fullfile(out, 'main_all_log.txt'), 'file'), delete(fullfile(out, 'main_all_log.txt')); end
 end
 
 diary(fullfile(out, 'main_all_log.txt'));

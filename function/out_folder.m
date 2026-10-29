@@ -11,13 +11,15 @@ function p = out_folder(kind, file)
 %   'scenarios' 4_scenarios                 main_all.m step 4
 %   'sweeps'    5_stress_tests              main_all.m step 5
 %   'single'    single_runs                 main_one.m
+%   'demo'      demo_videos                 main_demo.m
 %   ''          output itself
 %   With one argument the folder is created (callers write into it); with
 %   a second argument (a file name, or '' for the folder itself) only the
 %   path is returned and nothing is created.
 
 names = struct('training', '1_training', 'study', '2_main_study', 'figures', '3_figures', ...
-               'scenarios', '4_scenarios', 'sweeps', '5_stress_tests', 'single', 'single_runs');
+               'scenarios', '4_scenarios', 'sweeps', '5_stress_tests', 'single', 'single_runs', ...
+               'demo', 'demo_videos');
 root = fileparts(fileparts(mfilename('fullpath')));
 p = fullfile(root, 'output');
 if ~isempty(kind)
