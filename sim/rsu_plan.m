@@ -208,6 +208,9 @@ for m = 1:M
     if fixed(m) || ~use(m) || ~cav_o(m) || movo(m) == 'R', continue; end   % never the other turner
     k = find(rsu.shp.id == ids_o(m), 1);
     held = ~isempty(k) && t < rsu.shp.tgt(k);         % keep repeating a given target
+    % a command only within the vehicle's own limit; a vehicle pushed further
+    % by the slowed vehicle ahead of it just follows it (no command)
+    btau(m) = min(btau(m), hi(m));
     if btau(m) - lo(m) >= 0.3 || held
         if isempty(k)
             rsu.shp.id(end+1) = ids_o(m); rsu.shp.nat(end+1) = t + nat(m);

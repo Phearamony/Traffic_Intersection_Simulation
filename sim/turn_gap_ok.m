@@ -16,7 +16,7 @@ function [ok, why] = turn_gap_ok(i, V, G, sig, mode, margin)
 %                 or on-board sensing) up to its desired speed; a braking
 %                 vehicle is taken at constant speed; margin = PET_MIN
 %   sig.(app)     signal state of each approach ('green','yellow','red')
-%   Opposing straight vehicles behind an opposing right-turner that stands
+%   Opposing straight or left-turning vehicles behind an opposing right-turner that stands
 %   at its waiting point are blocked by it: they arrive at the earliest
 %   after it has left their lane, and a blocked vehicle that can still stop
 %   before the conflict zone yields to a turner already in the junction, so
@@ -58,7 +58,7 @@ for r = 1:size(rows, 1)
     for j = js
         sj = V(j).s; vj = V(j).v;
         if sj - L > z1q, continue; end                     % already cleared
-        blocked = sj < sBlock && G.P(q).mov == 'S';
+        blocked = sj < sBlock;          % straight or left: behind the turner in its lane
         if sj < G.P(q).s_stop + 0.05
             st = sig.(G.P(q).app);
             if strcmp(st, 'red'), continue; end
@@ -84,7 +84,8 @@ for r = 1:size(rows, 1)
         if blocked
             % it yields to a turner in the junction (sim_run, step 6) if it
             % can still stop before the zone; otherwise it counts as usual
-            if (z0q - sj) >= vj^2 / (2 * 3.0) + 2, continue; end
+            % (same test as the yielding rule in sim_run: 4 m/s^2, 0.5 m before the zone)
+            if (z0q - 0.5 - sj) >= vj^2 / (2 * 4.0), continue; end
             t_arr = max(t_arr, t_vac + travel_time(z0q - sj, vj, 2.0, max(V(j).Vd, 1)));
         end
         % a vehicle cannot pass the one ahead of it in its lane
