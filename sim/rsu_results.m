@@ -3,5 +3,6 @@ function E = rsu_results(rsu)
 E.samples = rsu.samples;
 E.evalrows = rsu.evalrows;
 E.shp = rsu.shp;
+E.diag = rsu.diag;
 E.plans = rsu.plans; E.noslot = rsu.noslot; E.online_n = rsu.online_n;
 end

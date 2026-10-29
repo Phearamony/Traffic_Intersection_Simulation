@@ -33,6 +33,7 @@ rsu.d_cmd = 40;                      % [m] no new command closer to the stop lin
 rsu.w_onc = 1.0;                     % weight of oncoming delay in the slot cost
 rsu.shp = struct('id', zeros(1, 0), 'nat', zeros(1, 0), 'tgt', zeros(1, 0), 't0', zeros(1, 0));
 rsu.plans = 0; rsu.noslot = 0; rsu.online_n = 0;
+rsu.diag = zeros(1, 4);              % joint optimizer: [plans, >=2 turners, real choice, differs from greedy]
 rsu.theta = [2.0, 2.0, 1.5];
 rsu.gpr = []; rsu.pigpr = []; rsu.pigpr_on = [];
 

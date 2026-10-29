@@ -38,7 +38,8 @@ function M = metrics_compute(R)
 %                                             (last target minus natural arrival)
 %     shape_decel                             strongest deceleration of a shaped
 %                                             vehicle while its command is active,
-%                                             more than 20 m before its stop line
+%                                             more than 20 m before its stop line,
+%                                             with no vehicle within 30 m ahead
 %                                             [m/s2, positive]
 %
 %   PET: for every right turn and every opposing vehicle sharing a conflict
@@ -153,8 +154,18 @@ if isfield(R, 'est') && isfield(R.est, 'shp') && ~isempty(R.est.shp.id)
     for k = 1:numel(sh.id)
         % while the command is active, away from the stop line (braking for a
         % queue or a red light near the line is not caused by the shaping)
-        m = LOG(:, 2) == sh.id(k) & LOG(:, 1) >= sh.t0(k) & LOG(:, 1) <= sh.tgt(k) & LOG(:, 3) < sStop - 20;
-        if any(m), dec = max(dec, -min(LOG(m, 5))); end
+        % and with no vehicle within 30 m ahead in its lane (braking for a
+        % vehicle ahead is not caused by the shaping either)
+        m = find(LOG(:, 2) == sh.id(k) & LOG(:, 1) >= sh.t0(k) & LOG(:, 1) <= sh.tgt(k) & LOG(:, 3) < sStop - 20);
+        if isempty(m), continue; end
+        ap = G.P(LOG(m(1), 6)).app;
+        for r = m'
+            same = LOG(:, 1) == LOG(r, 1);
+            o = find(same);
+            apo = [G.P(LOG(o, 6)).app];
+            ahead = apo == ap & LOG(o, 3)' > LOG(r, 3) & LOG(o, 3)' <= LOG(r, 3) + 30;
+            if ~any(ahead), dec = max(dec, -LOG(r, 5)); end
+        end
     end
     M.shape_decel = dec;
 end

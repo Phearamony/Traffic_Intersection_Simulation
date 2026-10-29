@@ -115,6 +115,9 @@ for ai = 1:2
     for i = 2:n                                    % lane order
         if ~e.fixed(i), e.lo(i) = max(e.lo(i), e.lo(i-1) + h); end
     end
+    % natural time: behind the vehicles ahead (lane order), or the time
+    % stored when it was first shaped
+    e.nat(e.ps == 0) = e.lo(e.ps == 0);
     e.nat = min(e.nat, e.lo);
     e.hi = e.lo;
     for i = 1:n
@@ -200,33 +203,22 @@ switch cfg.slot
             idx(k) = idx(k) + 1;
         end
     case {'greedy', 'fcfs'}
-        [~, ord] = sort(nat_k);
-        sl = zeros(1, nT);
-        for k = ord
-            opts = S{k};
-            if strcmp(cfg.slot, 'fcfs')
-                f = Ln{3 - T(k).ai};
-                p0 = 1 + sum(f.nat(T(k).cidx) < nat_k(k));
-                later = opts(opts >= p0);
-                if ~isempty(later), opts = [later, fliplr(opts(opts < p0))]; else, opts = fliplr(opts); end
-            end
-            bt = inf; bp = opts(end);
-            for p = opts
-                sl(k) = p;
-                if ~laneOrderOk(T, sl), continue; end
-                [ok, tau] = evalSlots(Ln, T, sl, h);
-                if ~ok, continue; end
-                tk = tau{T(k).ai}(T(k).i);
-                if strcmp(cfg.slot, 'fcfs'), bp = p; break; end
-                if tk < bt - 1e-9, bt = tk; bp = p; end
-            end
-            sl(k) = bp;
-        end
+        sl = greedySlots(Ln, T, S, nat_k, h, cfg);
         [ok, tau, held, J] = evalSlots(Ln, T, sl, h);
         if ok, best = struct('sl', sl, 'tau', {tau}, 'held', {held}); bestJ = J; end
 end
 if isempty(best), return; end
 rsu.plans = rsu.plans + 1;
+% diagnostics: how often the joint optimizer chooses differently from the
+% sequential greedy rule (same limits)
+if strcmp(cfg.slot, 'opt')
+    rsu.diag(1) = rsu.diag(1) + 1;                       % plans
+    rsu.diag(2) = rsu.diag(2) + (nT >= 2);               % plans with two or more turners
+    rsu.diag(3) = rsu.diag(3) + any(cellfun(@numel, S) > 1);   % a real choice
+    cg = cfg; cg.slot = 'greedy';
+    slg = greedySlots(Ln, T, S, nat_k, h, cg);
+    rsu.diag(4) = rsu.diag(4) + any(slg ~= best.sl);     % different choice
+end
 
 % ---------------- 4. messages ----------------
 for k = 1:nT
@@ -263,6 +255,34 @@ end
 end
 
 % ======================================================================
+function sl = greedySlots(Ln, T, S, nat_k, h, cfg)
+% turners in order of natural arrival; greedy: each its earliest feasible
+% slot; fcfs: the first feasible slot at or after its arrival-order position
+nT = numel(T);
+[~, ord] = sort(nat_k);
+sl = zeros(1, nT);
+for k = ord
+    opts = S{k};
+    if strcmp(cfg.slot, 'fcfs')
+        f = Ln{3 - T(k).ai};
+        p0 = 1 + sum(f.nat(T(k).cidx) < nat_k(k));
+        later = opts(opts >= p0);
+        if ~isempty(later), opts = [later, fliplr(opts(opts < p0))]; else, opts = fliplr(opts); end
+    end
+    bt = inf; bp = opts(end);
+    for p = opts
+        sl(k) = p;
+        if ~laneOrderOk(T, sl), continue; end
+        [ok, tau] = evalSlots(Ln, T, sl, h);
+        if ~ok, continue; end
+        tk = tau{T(k).ai}(T(k).i);
+        if strcmp(cfg.slot, 'fcfs'), bp = p; break; end
+        if tk < bt - 1e-9, bt = tk; bp = p; end
+    end
+    sl(k) = bp;
+end
+end
+
 function [ok, tau, held, J] = evalSlots(Ln, T, sl, h)
 % times of a slot assignment (sl(k) = 0: turner k not planned)
 tau = {Ln{1}.lo, Ln{2}.lo};
