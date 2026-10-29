@@ -217,7 +217,10 @@ for ai = 1:2
             if f.mov(m) == 'L'
                 PL = G.P(G.idx.([o 'L'])); vcap = min(PL.vcurve(PL.kappa > 0));
             end
-            v0m = min(f.v(m), vcap); if v0m < 5, v0m = 0; end
+            % from rest if it is slow now, or if it is predicted to arrive clearly
+            % later than its free travel (it will stop in a queue first)
+            v0m = min(f.v(m), vcap);
+            if v0m < min(5, 0.8 * vcap) || f.lo(m) > f.d(m) / max(f.v(m), 0.1) + 1.5, v0m = 0; end
             dent = (qz(4) - sStop) / vcap;
             dexit = travel_time(qz(5) + L - sStop, v0m, 1.5, vcap);
             dent_k = travel_time(qz(2) - P.s_wait, v_t0, 1.5, vt);
@@ -300,7 +303,10 @@ if any(noslot)
     [ok2, R2] = evalBest(Ln, T, sl2, h, adv, rsu.w_adv);
     if ok2, R2.sl = sl2; best = R2; else, shapeOK = false; end
 end
-if ~shapeOK, return; end                         % no consistent plan this step: send nothing
+if ~shapeOK                                       % no consistent plan this step: send nothing
+    if once, rsu.once_tg0 = -inf; end            % and try again next step
+    return;
+end
 
 % ---------------- 4. messages ----------------
 for k = 1:nT
