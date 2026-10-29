@@ -80,6 +80,8 @@ function/     settings, traffic schedule, runners (study, sweeps, scenarios, tra
 main/         the scripts you run (F5), see below
 simplot/      estimators.mat (written by main_train.m)
 output/       results of this version
+docs/         CODE_REVIEW_GUIDE.md: every formula of the code with file and line numbers,
+              computed example values and the open questions for review
 cise/         everything of the conference paper: v1 code, its full results, older files
               (see cise/README.md); new runs never write there
 ```
