@@ -40,7 +40,7 @@ cleanupObj = onCleanup(@() restoreEnv(names, old)); %#ok<NASGU>
 abl_env_reset();
 setenv('ABL_PLOT', '0'); setenv('ABL_LIVE', '0'); setenv('ABL_NOLOG', '0');
 setenv('ABL_KKMAX', num2str(kkmax));
-% rows of this study are marked, so single runs (main_*.m, watch_main) that
+% rows of this study are marked, so single runs (main_one.m, main_animation.m) that
 % also write to ablation_runs.csv are not mixed into the statistics
 setenv('ABL_STUDY', 'ablation'); setenv('ABL_POINT', '-');
 

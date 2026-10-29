@@ -22,11 +22,11 @@ out = fullfile(root, 'output');
 runs_csv = fullfile(out, 'ablation_runs.csv');
 if nargin < 2 || isempty(kkmax), kkmax = 720; end
 if nargin < 3 || isempty(cfgs)
-    cfgs = {'C1', 'V2V_IDM', 'V2V_MPC', 'C2', 'C2G', 'C3I', 'C3', 'C4'};
+    cfgs = {'C1', 'V2V_MPC', 'C2', 'C3', 'C4'};
 end
 if nargin < 1 || isempty(seed)
     if ~exist(runs_csv, 'file')
-        error('make_figures: %s not found. Run run_ablation first, or pass a seed.', runs_csv);
+        error('make_figures: %s not found. Run main_all.m (main study) first, or pass a seed.', runs_csv);
     end
     T = read_runs(runs_csv);
     P = T(T.label == "C4_proposed" & isfinite(T.fuel_rt_mL), :);

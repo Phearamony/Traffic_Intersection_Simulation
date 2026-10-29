@@ -10,7 +10,7 @@ SICE Festival 2026 (SICE Annual Conference), Yokohama, Japan.
 
 This branch is the **journal version (v2)**: a single simulation engine for every configuration, real
 turning paths, a physics-informed GPR with uncertainty and online learning, and an arrival-time MPC.
-The code of the conference paper is kept in `archive/v1/`.
+The code and results of the conference paper are kept in `cise/`.
 
 ---
 
@@ -21,6 +21,10 @@ car waits in the junction for a gap in the oncoming traffic, and on a single-lan
 behind it waits too.
 
 ## The method (v2)
+
+[5] = M. Hasan, S. Doman, A. S. M. Bakibillah, M. A. S. Kamal, K. Yamada, "An Optimal Right-Turn
+Coordination System for Connected and Automated Vehicles at Urban Intersections", submitted to Computers,
+Materials & Continua (version of October 21, 2025); reference [5] of the CISE paper.
 
 This version extends the right-turn coordination of Hasan et al. [5] (one turner, IDM arrival estimate,
 oncoming cars may yield without limit, planned once per green) and of the CISE paper (GPR and QP-MPC).
@@ -71,29 +75,33 @@ sim/          the simulation engine (one engine for every configuration)
   est_*.m, gp_*.m  estimators: IDM forward simulation, queue physics, sparse GP
   metrics_*.m      metrics of a run (fuel, delay, PET, jerk, ...) and the results CSV
   draw_intersection.m   animation frame (rotated vehicles on their paths)
-function/     settings, traffic schedule, statistics and figure functions
-main/         entry points and runners (see below)
-simplot/      estimators.mat (trained by train_estimators)
-output/       figures, results CSVs
-archive/      v1 code of the conference paper and older files (see archive/README.md)
+function/     settings, traffic schedule, runners (study, sweeps, scenarios, training),
+              statistics and figure functions
+main/         the scripts you run (F5), see below
+simplot/      estimators.mat (written by main_train.m)
+output/       results of this version
+cise/         everything of the conference paper: v1 code, its full results, older files
+              (see cise/README.md); new runs never write there
 ```
 
 ## Configurations
 
-| Name | Script | Controller | Coordination | Estimator | RSU message |
-|---|---|---|---|---|---|
-| C1 | `main_human_driving.m` | IDM, human (noise, individual parameters) | none, human gap rule | | |
-| V2V_MPC | `main_v2v_mpc.m` | MPC | V2V, on-board gap check | | |
-| C2 | `main_v2v_idm_rsu.m` | IDM tracking the target time | **method of [5]**: slot search once per green, 4 s gap, turners one after another | IDM forward sim. | target times |
-| C3 | `main_v2v_mpc_rsu_gpr.m` | MPC | **CISE method**: as C2 | GPR | target times |
-| **C4** | `main_proposed.m` | **MPC** | **joint slot optimizer every 0.5 s, gap shaping (later / earlier), uncertainty margins, eco approach** | **PI-GPR, online** | **target times** |
-| C4_NOUNC | | as C4, no uncertainty term in the margins | | | |
-| C4_NOONLINE | | as C4, no online learning | | | |
-| C4_SPEED | | as C4, speed advice instead of target times | | | |
-| C4_STRICT | | as C4, existing gaps only (no oncoming CAV is asked to change) | | | |
-| C4_SEQ | | as C4, turners one after another (the successive search of [5]) | | | |
-| C4_NOADV | | as C4, oncoming CAVs only asked to arrive later, never earlier | | | |
-| C4_ONCE | | as C4, planned once per green (as [5]) | | | |
+| Name | Controller | Coordination | Estimator | RSU message |
+|---|---|---|---|---|
+| C1 | IDM, human (noise, individual parameters) | none, human gap rule | | |
+| V2V_MPC | MPC | V2V, on-board gap check | | |
+| C2 | IDM tracking the target time | **method of [5]**: slot search once per green, 4 s gap, turners one after another | IDM forward sim. | target times |
+| C3 | MPC | **CISE method**: as C2 | GPR | target times |
+| **C4** | **MPC** | **joint slot optimizer every 0.5 s, gap shaping (later / earlier), uncertainty margins, eco approach** | **PI-GPR, online** | **target times** |
+| C4_NOUNC | as C4, no uncertainty term in the margins | | | |
+| C4_NOONLINE | as C4, no online learning | | | |
+| C4_SPEED | as C4, speed advice instead of target times | | | |
+| C4_STRICT | as C4, existing gaps only (no oncoming CAV is asked to change) | | | |
+| C4_SEQ | as C4, turners one after another (the successive search of [5]) | | | |
+| C4_NOADV | as C4, oncoming CAVs only asked to arrive later, never earlier | | | |
+| C4_ONCE | as C4, planned once per green (as [5]) | | | |
+
+Set the configuration by name in `main_one.m` or `main_animation.m`.
 
 Also available (not in the default study): V2V_IDM, C2G (C2 with GPR), C3I (C3 with the IDM estimator),
 the factorial of the CISE paper.
@@ -108,61 +116,43 @@ only the switches in `sim/sim_config.m` differ.
 
 ---
 
-## How to run everything (step by step)
+## How to run
 
-All commands go in the MATLAB Command Window (MATLAB with the Optimization Toolbox for `quadprog`
-and the Statistics and Machine Learning Toolbox for the statistics). Close MATLAB, the `output` folder
-in Explorer, and pause OneDrive (if the repo is inside it) before pulling.
+Requirements: MATLAB with the Optimization Toolbox (`quadprog`) and the Statistics and Machine Learning
+Toolbox (statistics). Close MATLAB and pause OneDrive (if the repo is inside it) before pulling:
 
 ```
 git pull origin main
 ```
 
-```matlab
-cd main
-run_all          % everything below, unattended (log in output/run_all_log.txt)
-```
+Then open a script in `main/`, change the settings block at the top if you want, and press **F5**:
 
-or step by step:
-
-| Step | Command | What it does | Output |
-|---|---|---|---|
-| 0 (optional) | `watch_main('C4')` | Live animation of one configuration, nothing saved | none |
-| 1 | `train_estimators` | Collect data (seeds 1-20, human drivers) and fit the queue physics, GPR and PI-GPR | `simplot/estimators.mat`, `output/gpr_holdout_metrics.csv`, `output/gpr_model_diagnostics.png` |
-| 2 | fresh start (below) | Remove old results | |
-| 3 | `run_ablation(101:105)` | Quick test: 5 seeds x 12 configurations | rows in `output/ablation_runs.csv` |
-| 4 | `run_ablation(101:120, 720, true)` | Main ablation, 20 seeds + estimator comparison | `ablation_runs.csv`, `ablation_stats.csv`, `ablation_pairs.csv`, `estimator_runs.csv` |
-| 5 | `make_figures` | Per-run figures of a typical seed + multi-seed summary | `EW_*.png`, `EW_*_ac.png`, `fuel_*.png`, `estimator_comparison_*.png`, `ablation_summary.png`, `ablation_paired.png` |
-| 6 | `run_scenarios` | Illustrative scenarios A and B | `output/scenarios/` |
-| 7 | `run_sweeps` | Stress tests, seeds 201-210 (resumable: Ctrl+C, run again to continue) | `output/sweeps/` |
-| 8 | `plot_sweeps` | Sweep figures and tables | `sweep_<study>.png`, `sweep_stats.csv`, `sweep_limits.csv` |
-
-**Fresh start** (after a code update), from `main/`:
-
-```matlab
-delete ../output/ablation_runs.csv
-delete ../output/estimator_runs.csv
-rmdir('../output/scenarios', 's')
-rmdir('../output/sweeps', 's')
-```
-
-**Stress tests one at a time:** `run_sweeps('demand')`, `'rtshare'`, `'latency'`, `'loss'`,
-`'penetration'` (mixed traffic), `'driver'` (drivers the estimators were not trained on), `'asym'`.
-
-**If something fails:** runners do not stop on an error; they log it in `output/ablation_errors.log`
-or `output/sweeps/sweep_errors.log` and continue.
-
-### Function inputs
-
-| Call | Inputs | Defaults |
+| Script | What it does | Time (MATLAB, rough) |
 |---|---|---|
-| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE (or an old script name). `VIEW`: half-width of the view in meters | `'C4'`, `101`, 60 m |
-| `train_estimators(seeds, n_test, kkmax)` | training seeds, how many of the last ones are held out, steps | `1:20`, `4`, `720` |
-| `run_ablation(seeds, kkmax, with_estimator, cfgs)` | seed list, steps, `true`/`false`, cell list of names | `101:120`, `720`, `false`, all 11 |
-| `run_sweeps(studies, seeds)` | one study name, a cell list, or `[]` for all | all studies, `201:210` |
-| `run_scenarios(names, cfgs)` | `'scenarioA'`, `'scenarioB'` or a cell list | both; C1, C2, C3, C4 |
-| `make_figures(seed, kkmax, cfgs)` | seed of the per-run figures | typical seed, `720` |
-| `run_all(fresh, train)` | `false` keeps results; `train=false` keeps the trained estimators | `true`, `true` |
+| `main_animation.m` | Live animation of one configuration. Nothing is saved | a few minutes |
+| `main_train.m` | Train the estimators (GPR, PI-GPR) on seeds 1-20. **Run it first, and again after any change to the traffic model** | 15-30 min |
+| `main_one.m` | Run one configuration, with or without animation, and save its figures | a few minutes |
+| `main_all.m` | Everything for the paper: training, main study (12 configurations x 20 seeds), figures, scenarios, stress tests | about a day; switch parts off in its settings |
+| `main_figures.m` | Redraw the figures from results that already exist | 10-20 min |
+
+After `git pull`, start with `main_train.m`, look at one run with `main_animation.m`, then start
+`main_all.m` (with `DO_TRAIN = false` if you have just trained).
+
+Results go to `output/`:
+
+| File | Content |
+|---|---|
+| `ablation_runs.csv` | one row per seed and configuration (all metrics) |
+| `ablation_stats.csv`, `ablation_pairs.csv` | means with 95% CI, paired comparisons with C4 |
+| `ablation_summary.png`, `ablation_paired.png` | the study figures |
+| `EW_<fig>.png`, `EW_<fig>_ac.png`, `fuel_<fig>.png` | trajectories, accelerations, fuel of one run |
+| `estimator_runs.csv`, `estimator_comparison_*.png`, `gpr_holdout_metrics.csv`, `gpr_model_diagnostics.png` | estimator accuracy |
+| `scenarios/`, `sweeps/` | scenarios A and B, stress tests |
+| `run_all_log.txt`, `ablation_errors.log` | console log and failed runs (a failed run does not stop the study) |
+
+The functions behind the scripts (in `function/`) can also be called directly, for example
+`run_ablation(101:105)` for a quick 5-seed study, `run_sweeps('penetration')` for one stress test (resumable:
+stop with Ctrl+C and call it again), or `watch_main('C4', 1, 'ABL_SCHED', 'scenarioB', 'VIEW', 40)`.
 
 ### Settings (`function/abl_settings.m`)
 
@@ -178,23 +168,11 @@ or `output/sweeps/sweep_errors.log` and continue.
 | `ABL_LAT` | one-way V2X latency [s] | `0` |
 | `ABL_LOSS` | packet loss per message, 0 to 1 | `0` |
 | `ABL_KKMAX` | number of 0.5 s steps | `720` (360 s) |
-
-Examples:
-
-```matlab
-watch_main('C1', 105)
-watch_main('C4', 1, 'ABL_SCHED', 'scenarioB', 'VIEW', 40)
-watch_main('C4', 201, 'ABL_SCHED', 'const', 'ABL_DEMAND', '0.6', 'ABL_DRIVER', 'aggressive')
-watch_main('C4', 201, 'ABL_SCHED', 'const', 'ABL_PEN', '0.5')    % mixed traffic
-```
+| `ABL_DMAX` | largest delay the RSU may ask of one oncoming CAV [s] | `2` |
 
 In the animation, cars are drawn at their real position and heading; right-turners are purple, left-turners
 gray; human drivers have a thick outline; a right-turner waiting for its gap has a yellow dot (cyan once the
 RSU has given it a slot).
-
-Running a `main_*.m` script with F5 also works (seed 1, live animation) but **does** save figures to
-`output/` and add a row to `output/ablation_runs.csv` (with an empty study name, so `summarize_ablation`
-ignores it once `run_ablation` rows exist). Use `watch_main` to only look.
 
 ---
 
