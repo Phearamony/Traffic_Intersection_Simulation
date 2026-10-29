@@ -12,26 +12,40 @@ function cfg = sim_config(name)
 %                              PET margin)
 %           'rsu'              as v2v, plus the RSU slot planner
 %   est     'idm' | 'gpr' | 'pigpr'   RSU arrival-time estimator
-%   msg     'speed'            RSU sends a recommended speed (conference
-%                              method): v = d / tau, used within 80 m of the
-%                              stop line and never below 0.5 Vd
-%           'time'             RSU sends a target arrival time; the MPC keeps
-%                              the vehicle behind that point until then
-%   unc_z   z of the uncertainty term in the slot margins (0 = fixed margins)
+%   msg     'speed'            RSU sends a recommended speed: v = d / tau,
+%                              used within 80 m of the stop line and never
+%                              below 0.5 Vd
+%           'time'             RSU sends target times: the MPC keeps the
+%                              vehicle behind its point until then; an IDM
+%                              CAV sets its desired speed to reach the point
+%                              at that time (as in [5]); a turner leaves its
+%                              waiting point at its go time
+%   unc_z   z of the uncertainty term in the slot margins (0 = no uncertainty)
 %   online  1 = PI-GPR learns from every observed arrival during the run
 %   spat    1 = the controller knows the signal timing (V2I); 0 = only the
 %           current light
-%   slot    rule of the RSU slot search (rsu_plan); every rule keeps the
-%           right-turn priority of the Road Traffic Act (art. 37) and the
-%           same shaping limits (ABL_DMAX ...):
-%           'opt'    optimizer: cheapest feasible slot (proposed)
-%           'strict' existing gaps only, no oncoming vehicle is asked to slow
-%           'greedy' earliest slot for the turner, oncoming cost ignored
-%           'fcfs'   first come, first served
+%   slot    'opt' joint optimizer | 'seq' successive, as in [5] | 'strict'
+%           existing gaps only (rsu_plan); every rule keeps the right-turn
+%           priority of the Road Traffic Act (art. 37) and the same limits
+%   plan    'rolling' every step | 'once' at the start of each green ([5], CISE)
+%   margin  'geom' conflict-zone geometry + PET + uncertainty |
+%           'fixed' 4 s safety gap and 2 s headway ([5], CISE)
+%   adv     1 = the RSU may also ask CAVs to arrive earlier (up to the limit)
+%   eco     1 = CAVs that have to wait anyway get their planned arrival time
 %   label   results label;  fig  suffix of the figure names
+%
+%   Reference methods, rebuilt in this engine with the same traffic, the
+%   same legal limits and the same metrics:
+%     C2  [5] Hasan et al.: IDM vehicles that track their target crossing
+%         times, IDM forward simulation, fixed 4 s gap, planned once per
+%         green, turners one after another
+%     C3  CISE (conference paper): as C2 with GPR estimator and QP-MPC
 
 c = struct('ctrl', 'idm', 'coord', 'none', 'est', 'idm', 'msg', 'speed', ...
-           'unc_z', 0, 'online', 0, 'spat', 0, 'slot', 'opt', 'label', '', 'fig', '', 'name', name);
+           'unc_z', 0, 'online', 0, 'spat', 0, 'slot', 'opt', 'plan', 'rolling', ...
+           'margin', 'geom', 'adv', 0, 'eco', 0, 'label', '', 'fig', '', 'name', name);
+ref = {'coord', 'rsu'; 'spat', 1; 'msg', 'time'; 'slot', 'seq'; 'plan', 'once'; ...
+       'margin', 'fixed'; 'eco', 1};
 switch upper(name)
     case 'C1'
         c.label = 'C1_human';        c.fig = 'human';
@@ -40,21 +54,21 @@ switch upper(name)
     case 'V2V_MPC'
         c.coord = 'v2v'; c.ctrl = 'mpc';
         c.label = 'V2V_MPC';         c.fig = 'mpc';
-    case 'C2'
-        c.coord = 'rsu';             c.est = 'idm';  c.spat = 1;
+    case 'C2'                                  % [5]
+        c = setf(c, ref); c.est = 'idm';
         c.label = 'C2_idm_rsu';      c.fig = 'idm_rsu';
     case 'C2G'
-        c.coord = 'rsu';             c.est = 'gpr';  c.spat = 1;
+        c = setf(c, ref); c.est = 'gpr';
         c.label = 'C2G_idm_rsu_gpr'; c.fig = 'idm_rsu_gpr';
     case 'C3I'
-        c.coord = 'rsu'; c.ctrl = 'mpc'; c.est = 'idm'; c.spat = 1;
+        c = setf(c, ref); c.ctrl = 'mpc'; c.est = 'idm';
         c.label = 'C3I_mpc_rsu';     c.fig = 'mpc_rsu';
-    case 'C3'
-        c.coord = 'rsu'; c.ctrl = 'mpc'; c.est = 'gpr'; c.spat = 1;
+    case 'C3'                                  % CISE
+        c = setf(c, ref); c.ctrl = 'mpc'; c.est = 'gpr';
         c.label = 'C3_mpc_rsu_gpr';  c.fig = 'mpc_rsu_gpr';
-    case 'C4'
+    case 'C4'                                  % proposed
         c.coord = 'rsu'; c.ctrl = 'mpc'; c.est = 'pigpr'; c.spat = 1;
-        c.msg = 'time'; c.unc_z = 1.645; c.online = 1;
+        c.msg = 'time'; c.unc_z = 1.645; c.online = 1; c.adv = 1; c.eco = 1;
         c.label = 'C4_proposed';     c.fig = 'proposed';
     case 'C4_NOUNC'
         c = sim_config('C4'); c.unc_z = 0;
@@ -68,15 +82,22 @@ switch upper(name)
     case 'C4_STRICT'
         c = sim_config('C4'); c.slot = 'strict';
         c.label = 'C4_strict';       c.fig = 'proposed_strict';
-    case 'C4_GREEDY'
-        c = sim_config('C4'); c.slot = 'greedy';
-        c.label = 'C4_greedy';       c.fig = 'proposed_greedy';
-    case 'C4_FCFS'
-        c = sim_config('C4'); c.slot = 'fcfs';
-        c.label = 'C4_fcfs';         c.fig = 'proposed_fcfs';
+    case 'C4_SEQ'
+        c = sim_config('C4'); c.slot = 'seq';
+        c.label = 'C4_seq';          c.fig = 'proposed_seq';
+    case 'C4_NOADV'
+        c = sim_config('C4'); c.adv = 0;
+        c.label = 'C4_no_adv';       c.fig = 'proposed_no_adv';
+    case 'C4_ONCE'
+        c = sim_config('C4'); c.plan = 'once';
+        c.label = 'C4_once';         c.fig = 'proposed_once';
     otherwise
         error('sim_config: unknown configuration %s', name);
 end
 c.name = upper(name);
 cfg = c;
+end
+
+function c = setf(c, kv)
+for k = 1:size(kv, 1), c.(kv{k, 1}) = kv{k, 2}; end
 end

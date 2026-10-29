@@ -74,7 +74,7 @@ for r = 1:size(rows, 1)
             t_arr = travel_time(z0q - sj, vj, aj, max(V(j).Vd, vj));
             % a vehicle held back by an RSU arrival-time target (known over V2X)
             m = V(j).msg;
-            if ~isempty(fieldnames(m)) && isfield(m, 'tgt') && isfinite(m.tgt) && sj < m.spt ...
+            if ~isempty(fieldnames(m)) && isfield(m, 'hard') && m.hard && isfinite(m.tgt) && sj < m.spt ...
                     && tnow(V) < m.tgt && tnow(V) - V(j).msg_rx <= 10
                 t_arr = max(t_arr, (m.tgt - tnow(V)) + (z0q - m.spt) / max(vj, 6));
             end

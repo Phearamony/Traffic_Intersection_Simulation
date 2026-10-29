@@ -185,6 +185,12 @@ for KK = 1:KKmax
         if V(i).mov == 'R' && ~V(i).committed && V(i).s >= P.s_stop - 40
             if V(i).isCAV
                 [ok, why] = turn_gap_ok(i, V, G, sig, 'cav', 1.5);
+                % a turner with an RSU go time leaves its waiting point at that
+                % time (the on-board check still has the final say)
+                if ok && strcmp(cfg.coord, 'rsu') && strcmp(cfg.msg, 'time') && held(V(i), t) ...
+                        && isfield(V(i).msg, 'go') && isfinite(V(i).msg.go) && t < V(i).msg.go - 0.25
+                    ok = false;
+                end
             else
                 [ok, why] = turn_gap_ok(i, V, G, sig, 'human', 0.7 + V(i).hm);
             end
@@ -241,7 +247,17 @@ for KK = 1:KKmax
             count.qp = count.qp + info.solves; count.qpfail = count.qpfail + info.fail;
         else
             v0 = V(i).Vd;
-            if V(i).isCAV && strcmp(cfg.coord, 'rsu') && fresh(V(i), t) && ...
+            if V(i).isCAV && strcmp(cfg.coord, 'rsu') && strcmp(cfg.msg, 'time') && held(V(i), t) ...
+                    && isfield(V(i).msg, 'tgt') && isfinite(V(i).msg.tgt) && t < V(i).msg.tgt ...
+                    && V(i).s < V(i).msg.spt
+                % target time: desired speed that reaches the point at that time ([5])
+                vt_ = (V(i).msg.spt - V(i).s) / max(V(i).msg.tgt - t, 0.5);
+                if isfield(V(i).msg, 'pull') && V(i).msg.pull
+                    v0 = min(max(v0, vt_), C.V_LIM);
+                else
+                    v0 = min(v0, max(vt_, 1.0));
+                end
+            elseif V(i).isCAV && strcmp(cfg.coord, 'rsu') && fresh(V(i), t) && ...
                     isfield(V(i).msg, 'vadv') && isfinite(V(i).msg.vadv)
                 dz = P.s_stop - V(i).s;
                 if dz > 0 && dz <= 80
@@ -395,6 +411,11 @@ end
 
 function f = fresh(veh, t)
 f = (t - veh.msg_rx) <= 1.0 + 1e-9 && ~isempty(fieldnames(veh.msg));
+end
+
+function f = held(veh, t)
+% a target time is kept for up to 10 s after it was received
+f = (t - veh.msg_rx) <= 10 && ~isempty(fieldnames(veh.msg));
 end
 
 function [gap, vl, lead] = find_leadersAt(V, G, s_new)

@@ -41,8 +41,8 @@ E = [];
 if exist(est_csv, 'file'), E = read_runs(est_csv); end
 
 order  = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', 'C3_mpc_rsu_gpr', ...
-          'C4_no_online', 'C4_strict', 'C4_greedy', 'C4_proposed'};
-short  = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2', 'C2G', 'C3I', 'C3', 'C4 (no online)', 'C4 (strict)', 'C4 (greedy)', 'C4'};
+          'C4_no_online', 'C4_strict', 'C4_seq', 'C4_proposed'};
+short  = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2 [5]', 'C2G', 'C3I', 'C3 CISE', 'C4 (no online)', 'C4 (strict)', 'C4 (seq)', 'C4'};
 colors = [0.45 0.45 0.45; 0.55 0.35 0.65; 0.30 0.60 0.75; 0.20 0.45 0.80; 0.35 0.70 0.35; ...
           0.90 0.60 0.10; 0.20 0.55 0.85; 0.95 0.55 0.45; 0.40 0.40 0.75; 0.60 0.45 0.20; 0.80 0.20 0.10];
 markers = {'s', 'v', '^', 'o', 'd', 'p', 'd', 'v', 'x', '+', 'o'};

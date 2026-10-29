@@ -36,6 +36,10 @@ function M = metrics_compute(R)
 %     n_shaped, shape_mean_s, shape_max_s     oncoming CAVs the RSU asked to (by 0.3 s or more)
 %                                             arrive later; extra delay asked
 %                                             (last target minus natural arrival)
+%     n_pulled, pull_mean_s                   oncoming CAVs asked to arrive earlier
+%                                             (up to the speed limit); time gained
+%     n_eco                                   CAVs given an eco arrival time
+%                                             (they had to wait anyway)
 %     shape_decel                             strongest deceleration of a shaped
 %                                             vehicle while its command is active,
 %                                             more than 20 m before its stop line,
@@ -142,6 +146,11 @@ end
 
 % ---- gap shaping by the RSU ----
 M.n_shaped = 0; M.shape_mean_s = NaN; M.shape_max_s = NaN; M.shape_decel = NaN;
+M.n_pulled = 0; M.pull_mean_s = NaN; M.n_eco = 0;
+if isfield(R, 'est') && isfield(R.est, 'pul') && ~isempty(R.est.pul.id)
+    M.n_pulled = numel(R.est.pul.id); M.pull_mean_s = mean(R.est.pul.gain);
+end
+if isfield(R, 'est') && isfield(R.est, 'eco'), M.n_eco = numel(R.est.eco); end
 if isfield(R, 'est') && isfield(R.est, 'shp') && ~isempty(R.est.shp.id)
     sh = R.est.shp;
     dly = sh.tgt - sh.nat;

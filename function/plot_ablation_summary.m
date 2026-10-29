@@ -33,8 +33,10 @@ if ismember('study', T.Properties.VariableNames) && any(T.study == "ablation")
 end
 
 cfg   = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', ...
-         'C3_mpc_rsu_gpr', 'C4_no_unc', 'C4_no_online', 'C4_speed_adv', 'C4_strict', 'C4_greedy', 'C4_fcfs', 'C4_proposed'};
-names = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2', 'C2G', 'C3I', 'C3', 'C4-unc', 'C4-onl', 'C4-spd', 'C4-strict', 'C4-greedy', 'C4-fcfs', 'C4'};
+         'C3_mpc_rsu_gpr', 'C4_no_unc', 'C4_no_online', 'C4_speed_adv', 'C4_strict', 'C4_seq', ...
+         'C4_no_adv', 'C4_once', 'C4_proposed'};
+names = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2 [5]', 'C2G', 'C3I', 'C3 CISE', 'C4-unc', 'C4-onl', 'C4-spd', ...
+         'C4-strict', 'C4-seq', 'C4-adv', 'C4-once', 'C4'};
 keep  = ismember(cfg, cellstr(unique(T.label)));
 cfg = cfg(keep); names = names(keep);
 
@@ -80,17 +82,16 @@ close(f1);
 
 % ---------------- Figure 2: paired differences ----------------
 cmp = { 'C1_human',        'C4_proposed',     'Proposed vs human  (C1\rightarrowC4)';
-        'C3_mpc_rsu_gpr',  'C4_proposed',     'Proposed vs conference  (C3\rightarrowC4)';
+        'C2_idm_rsu',      'C4_proposed',     'Proposed vs [5]  (C2\rightarrowC4)';
+        'C3_mpc_rsu_gpr',  'C4_proposed',     'Proposed vs CISE  (C3\rightarrowC4)';
         'V2V_MPC',         'C4_proposed',     'RSU | MPC  (V2V-MPC\rightarrowC4)';
         'C4_no_unc',       'C4_proposed',     'Uncertainty margins';
         'C4_no_online',    'C4_proposed',     'Online learning';
         'C4_speed_adv',    'C4_proposed',     'Arrival time vs speed advice';
         'C4_strict',       'C4_proposed',     'Gap shaping  (strict\rightarrowC4)';
-        'C4_greedy',       'C4_proposed',     'Optimizer vs earliest slot';
-        'C4_fcfs',         'C4_proposed',     'Optimizer vs first come, first served';
-        'C2_idm_rsu',      'C3I_mpc_rsu',     'Controller | IDM est.  (C2\rightarrowC3I)';
-        'C3I_mpc_rsu',     'C3_mpc_rsu_gpr',  'Estimator | MPC  (C3I\rightarrowC3)';
-        'V2V_IDM',         'V2V_MPC',         'Controller | no RSU' };
+        'C4_seq',          'C4_proposed',     'Joint vs successive slots';
+        'C4_no_adv',       'C4_proposed',     'Pulling forward';
+        'C4_once',         'C4_proposed',     'Every step vs once per green' };
 pm  = {'fuel_rt_mL', 'gap_rt_s', 'n_exited'};
 pl  = {'\Delta fuel per right-turner [mL]', '\Delta gap wait [s]', '\Delta vehicles finished [veh]'};
 

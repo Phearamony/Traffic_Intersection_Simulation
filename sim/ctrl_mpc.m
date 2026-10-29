@@ -16,7 +16,8 @@ function [acc, veh, info] = ctrl_mpc(veh, gap, vl, sStop, G, cfg, t, sigT, sigNo
 %   (u_{-1} = current acceleration; the last term penalises jerk).
 %   vref_k = min(Vd, curve speed at the predicted position s_k), and in the
 %   speed-advice configurations min(vref, max(v_adv, 0.5 Vd)) within 80 m
-%   of the stop line.
+%   of the stop line; a vehicle pulled forward by the RSU uses the speed
+%   limit instead of Vd until its target time.
 %   Constraints
 %     -6 <= u_k <= 2,   0 <= v_k <= curve speed at s_k
 %     gap        s_k + T_c v_k <= s + gap + d_l(k) - s0_c   (T_c = 1.2 s, s0_c = 2 m)
@@ -64,6 +65,12 @@ if fresh && strcmp(cfg.msg, 'speed') && isfield(veh.msg, 'vadv') && isfinite(veh
     if dz > 0 && dz <= 80
         vref = min(vref, max(veh.msg.vadv, 0.5 * veh.Vd));
     end
+end
+
+% pulled forward by the RSU: drive up to the speed limit until the target
+if (t - veh.msg_rx) <= 10 && isfield(veh.msg, 'pull') && veh.msg.pull && ...
+        isfield(veh.msg, 'tgt') && t < veh.msg.tgt && s < veh.msg.spt
+    vref = min(C.V_LIM, vcur);
 end
 
 Hm = 2 * (wv * (Sv' * Sv) + wu * eye(N) + wj * (Dj' * Dj));

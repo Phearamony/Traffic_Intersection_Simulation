@@ -23,6 +23,8 @@ rsu.samples = zeros(0, 14);          % [t_snap id app(1=E,2=W) d v gap g n vl nR
 rsu.evalrows = zeros(0, 12);         % see rsu_crossed
 rsu.lambda = 0.995;                  % forgetting factor of online learning
 rsu.h_min = 1.0;                     % [s] minimum headway between stop-line arrivals
+rsu.tau_safe = 4.0;                  % [s] fixed safety gap of [5] and CISE (cfg.margin = 'fixed')
+if strcmp(cfg.margin, 'fixed'), rsu.h_min = 2.0; end   % h_time = 2 s in [5] and CISE
 rsu.pet = 1.5;                       % [s] PET margin of a slot
 % gap shaping limits (rsu_plan): oncoming CAVs only
 rsu.dmax = 2.0;                      % [s] largest extra delay per vehicle (ABL_DMAX)
@@ -30,10 +32,15 @@ if isfield(S, 'dmax'), rsu.dmax = S.dmax; end
 rsu.v_frac = 0.7;                    % never slower than this fraction of its speed
 rsu.a_shape = 1.0;                   % [m/s2] deceleration used for the limit
 rsu.d_cmd = 40;                      % [m] no new command closer to the stop line
-rsu.w_onc = 1.0;                     % weight of oncoming delay in the slot cost
+rsu.adv_max = 1.5;                   % [s] largest gain asked of a pulled CAV (cfg.adv)
+rsu.w_adv = 0.25;                    % price of asking a vehicle to arrive earlier
 rsu.shp = struct('id', zeros(1, 0), 'nat', zeros(1, 0), 'tgt', zeros(1, 0), 't0', zeros(1, 0));
+rsu.pul = struct('id', zeros(1, 0), 'gain', zeros(1, 0));   % pulled forward
+rsu.eco = zeros(1, 0);               % CAVs that got an eco arrival time
+rsu.once_tg0 = -inf;                 % planning once per green: green already planned
+rsu.once_msgs = struct('id', {}, 'vadv', {}, 'tgt', {}, 'spt', {}, 'go', {}, 'pull', {}, 'hard', {});
 rsu.plans = 0; rsu.noslot = 0; rsu.online_n = 0;
-rsu.diag = zeros(1, 4);              % joint optimizer: [plans, >=2 turners, real choice, differs from greedy]
+rsu.diag = zeros(1, 4);              % joint optimizer: [plans, >=2 turners, real choice, differs from successive ([5])]
 rsu.theta = [2.0, 2.0, 1.5];
 rsu.gpr = []; rsu.pigpr = []; rsu.pigpr_on = [];
 

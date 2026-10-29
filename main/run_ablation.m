@@ -7,13 +7,14 @@ function run_ablation(seeds, kkmax, with_estimator, cfgs)
 %   run_ablation(101:105, 720, false, {'C1', 'C4'})   % only some configurations
 %
 %   Configurations (sim/sim_config.m):
-%     C1 human drivers | V2V_IDM, V2V_MPC (no RSU) | C2, C2G (IDM + RSU with
-%     IDM / GPR estimator, speed advice) | C3I, C3 (MPC + RSU, IDM / GPR,
-%     speed advice) | C4 proposed (MPC + RSU, PI-GPR online, uncertainty
-%     margins, arrival-time messages) | C4_NOUNC, C4_NOONLINE, C4_SPEED
-%     slot rule: existing gaps only | earliest slot for the turner |
-%     first come first served | C4_STRICT, C4_GREEDY, C4_FCFS
-%     (C4 with one part switched off)
+%     C1 human drivers | V2V_MPC (CAVs, no RSU) | C2 the method of [5]
+%     (IDM, IDM estimator, 4 s gap, once per green, turners one after
+%     another) | C3 the CISE method (as C2 with GPR and QP-MPC) |
+%     C4 proposed | C4 with one part changed: C4_NOUNC (no uncertainty
+%     margins), C4_NOONLINE (no online learning), C4_SPEED (speed advice),
+%     C4_STRICT (existing gaps only), C4_SEQ (turners one after another,
+%     as [5]), C4_NOADV (no pulling forward), C4_ONCE (planned once per green)
+%   Also available: V2V_IDM, C2G, C3I (the factorial of the CISE paper).
 %   All share the traffic of each seed. One row per (seed, configuration)
 %   goes to output/ablation_runs.csv; summarize_ablation() then writes
 %   ablation_stats.csv and ablation_pairs.csv.
@@ -25,9 +26,8 @@ if nargin < 1 || isempty(seeds), seeds = 101:120; end
 if nargin < 2 || isempty(kkmax), kkmax = 720; end
 if nargin < 3 || isempty(with_estimator), with_estimator = false; end
 if nargin < 4 || isempty(cfgs)
-    cfgs = {'C1', 'V2V_IDM', 'V2V_MPC', 'C2', 'C2G', 'C3I', 'C3', ...
-            'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', ...
-            'C4_STRICT', 'C4_GREEDY', 'C4_FCFS'};
+    cfgs = {'C1', 'V2V_MPC', 'C2', 'C3', 'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', ...
+            'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE'};
 end
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));

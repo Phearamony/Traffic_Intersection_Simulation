@@ -22,29 +22,34 @@ behind it waits too.
 
 ## The method (v2)
 
-A Road Side Unit (RSU) receives the state of every connected vehicle over V2X and plans, for both
-approaches together, when each waiting right-turner turns and which oncoming CAVs should arrive a little
-later to make that possible. Human drivers have no V2X: the RSU can neither see nor instruct them.
+This version extends the right-turn coordination of Hasan et al. [5] (one turner, IDM arrival estimate,
+oncoming cars may yield without limit, planned once per green) and of the CISE paper (GPR and QP-MPC).
+The road is urban: speed limit 50 km/h, drivers' desired speeds 35 to 55 km/h; CAVs keep the limit.
+
+A Road Side Unit (RSU) receives the state of every connected vehicle over V2X and decides, every 0.5 s and
+for both approaches together, when each waiting right-turner turns and what every CAV should do to make
+that possible. Human drivers have no V2X: the RSU can neither see nor instruct them.
 
 1. **Physics-informed GPR (PI-GPR) arrival-time estimator.** The prior is the IDM forward simulation of
-   the queue (the conference estimator); a sparse Gaussian process learns its error from
+   the queue (the estimator of [5]); a sparse Gaussian process learns its error from
    `[d, v, gap, signal timing, vehicles ahead, speed ahead, right-turners ahead, prior]`. Its uncertainty
    grows with the time to arrival (`sigma = sqrt(GP variance + (c1 tau)^2)`, fitted on the training data),
    and it keeps learning online from every arrival the RSU observes.
-2. **Joint gap-shaping slot optimizer** (`sim/rsu_plan.m`). Every waiting turner (up to two per lane, both
-   approaches) gets a slot in the oncoming stream. Safety margins come from the conflict-zone geometry, a
-   post-encroachment margin and `z * sigma` of the vehicles the RSU does not control. The right-turner
-   always yields (Road Traffic Act, art. 37): its on-board check only lets it turn into a gap that exists.
-   To make a gap, the RSU may ask oncoming CAVs to arrive a little later, within legal and comfort limits
-   (at most 2 s, never below 0.7 of their speed, about 1 m/s^2, no new command within 40 m of the stop
-   line). The optimizer picks the joint assignment with the smallest total squared delay of all vehicles,
-   so it can, for example, let the east and west turners go together (mutual right turns do not conflict)
-   or give two turners of one lane the same gap. Baselines with the same limits: existing gaps only,
-   earliest slot per turner (greedy), first come first served.
-3. **Arrival-time MPC.** The RSU sends target arrival times (not speeds). Each CAV solves a QP-MPC with a
-   10 s horizon, jerk penalty, curve speed limits, signal timing, and the constraint "do not reach this
-   point before the target time". A right-turner with a slot rolls through the turn without stopping, and
-   a held oncoming CAV cannot arrive early, so the RSU needs smaller margins for the vehicles it commands.
+2. **Joint gap-shaping slot optimizer** (`sim/rsu_plan.m`). The slot search of [5] (insert the turner
+   before oncoming vehicle *p*), extended to every waiting turner of both approaches at once. For each
+   candidate assignment the RSU computes the smallest legal changes that make it work and keeps the one
+   with the least total delay. The right-turner always yields (Road Traffic Act, art. 37): its on-board
+   check only lets it turn into a gap that exists. To make a gap the RSU may ask oncoming CAVs to arrive a
+   little later (at most 2 s, never below 0.7 of their speed, about 1 m/s^2, no new command within 40 m of
+   the stop line) or, for the car before the gap, a little earlier (up to the speed limit). Safety margins
+   come from the conflict-zone geometry, a post-encroachment margin and `z * sigma` of the vehicles the RSU
+   does not control.
+3. **Arrival-time MPC and eco approach.** The RSU sends target times (not speeds) to every CAV it plans
+   for: the turner (when to go), oncoming CAVs (shaped or pulled forward), and CAVs that have to wait
+   anyway (behind a waiting turner), so they slow early instead of stopping late. Each CAV solves a QP-MPC
+   with a 10 s horizon, jerk penalty, curve speed limits, signal timing and the constraint "do not reach
+   this point before the target time". A held CAV cannot arrive early, so the RSU needs smaller margins for
+   the vehicles it commands.
 
 All vehicles drive along real lane paths (straight, left arc, right arc), so turns are continuous and the
 safety measure is the post-encroachment time (PET) at the conflict zones.
@@ -78,25 +83,25 @@ archive/      v1 code of the conference paper and older files (see archive/READM
 | Name | Script | Controller | Coordination | Estimator | RSU message |
 |---|---|---|---|---|---|
 | C1 | `main_human_driving.m` | IDM, human (noise, individual parameters) | none, human gap rule | | |
-| V2V_IDM | `main_v2v_idm.m` | IDM | V2V, on-board gap check | | |
 | V2V_MPC | `main_v2v_mpc.m` | MPC | V2V, on-board gap check | | |
-| C2 | `main_v2v_idm_rsu.m` | IDM | RSU slots | IDM forward sim. | speed |
-| C2G | `main_v2v_idm_rsu_gpr.m` | IDM | RSU slots | GPR | speed |
-| C3I | `main_v2v_mpc_rsu.m` | MPC | RSU slots | IDM forward sim. | speed |
-| C3 | `main_v2v_mpc_rsu_gpr.m` | MPC | RSU slots | GPR | speed (conference method) |
-| **C4** | `main_proposed.m` | **MPC** | **RSU joint slot optimizer + gap shaping + uncertainty margins** | **PI-GPR, online** | **arrival time** |
-| C4_NOUNC | | as C4, fixed margins | | | |
+| C2 | `main_v2v_idm_rsu.m` | IDM tracking the target time | **method of [5]**: slot search once per green, 4 s gap, turners one after another | IDM forward sim. | target times |
+| C3 | `main_v2v_mpc_rsu_gpr.m` | MPC | **CISE method**: as C2 | GPR | target times |
+| **C4** | `main_proposed.m` | **MPC** | **joint slot optimizer every 0.5 s, gap shaping (later / earlier), uncertainty margins, eco approach** | **PI-GPR, online** | **target times** |
+| C4_NOUNC | | as C4, no uncertainty term in the margins | | | |
 | C4_NOONLINE | | as C4, no online learning | | | |
-| C4_SPEED | | as C4, speed messages | | | |
-| C4_STRICT | | as C4, existing gaps only (no oncoming CAV is asked to slow) | | | |
-| C4_GREEDY | | as C4, slot rule: turners in arrival order, each its earliest slot | | | |
-| C4_FCFS | | as C4, slot rule: turners in arrival order, first come first served | | | |
+| C4_SPEED | | as C4, speed advice instead of target times | | | |
+| C4_STRICT | | as C4, existing gaps only (no oncoming CAV is asked to change) | | | |
+| C4_SEQ | | as C4, turners one after another (the successive search of [5]) | | | |
+| C4_NOADV | | as C4, oncoming CAVs only asked to arrive later, never earlier | | | |
+| C4_ONCE | | as C4, planned once per green (as [5]) | | | |
+
+Also available (not in the default study): V2V_IDM, C2G (C2 with GPR), C3I (C3 with the IDM estimator),
+the factorial of the CISE paper.
 
 Right-turn priority: every configuration follows the Road Traffic Act (art. 37). The right-turner yields:
-its on-board check only lets it turn into a gap that exists. The RSU may make such a gap by asking oncoming
-CAVs to arrive a little later, within the same limits for every RSU configuration: at most `ABL_DMAX`
-(2 s) per vehicle, never slower than 0.7 of its speed, about 1 m/s^2, no new command within 40 m of the
-stop line. Human drivers have no V2X: the RSU cannot see or instruct them.
+its on-board check only lets it turn into a gap that exists. Every RSU configuration, including C2 and C3,
+uses the same limits on how much an oncoming CAV may be asked to change (`ABL_DMAX` = 2 s and the comfort
+limits above). [5] itself had no such limit; with it, the comparison is fair.
 
 Every configuration shares the same roads, traffic, driver parameters, signal plan, spawning and metrics;
 only the switches in `sim/sim_config.m` differ.
@@ -151,7 +156,7 @@ or `output/sweeps/sweep_errors.log` and continue.
 
 | Call | Inputs | Defaults |
 |---|---|---|
-| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_GREEDY, C4_FCFS (or an old script name). `VIEW`: half-width of the view in meters | `'C4'`, `101`, 60 m |
+| `watch_main(name, seed, 'ABL_...', 'value', ..., 'VIEW', m)` | `name`: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE (or an old script name). `VIEW`: half-width of the view in meters | `'C4'`, `101`, 60 m |
 | `train_estimators(seeds, n_test, kkmax)` | training seeds, how many of the last ones are held out, steps | `1:20`, `4`, `720` |
 | `run_ablation(seeds, kkmax, with_estimator, cfgs)` | seed list, steps, `true`/`false`, cell list of names | `101:120`, `720`, `false`, all 11 |
 | `run_sweeps(studies, seeds)` | one study name, a cell list, or `[]` for all | all studies, `201:210` |

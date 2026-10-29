@@ -40,35 +40,70 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %     gentle_m: the delay of slowing to no less than v_frac of its speed,
 %     decelerating at most a_shape, over half of its distance d_m; no new
 %     command once d_m < d_cmd or the vehicle is queued (v < 5 m/s). It may
-%     also be held at its natural time (no delay). Human drivers and
-%     vehicles past the stop line cannot be asked; a vehicle behind a slowed
-%     one just follows it. A given target is never taken back.
+%     also be held at its natural time (no delay). With cfg.adv a CAV
+%     before a slot may also be asked to arrive earlier, down to
+%       lo_adv_m = lo_m - min(adv_max, d_m / v_m - t_fast_m)
+%     t_fast_m: its time to the stop line accelerating at 1 m/s^2 up to the
+%     speed limit (never faster than the limit). Human drivers and vehicles
+%     past the stop line cannot be asked; a vehicle behind a slowed one just
+%     follows it. A given later target is never taken back.
 %     An assignment is feasible when every vehicle that is later than lo is
-%     a turner, is pushed by the vehicle ahead, or is a CAV within hi.
+%     a turner, is pushed by the vehicle ahead, or is a CAV within hi, and
+%     every vehicle earlier than lo is a pulled CAV within lo_adv.
 %
 %   Cost and rules (cfg.slot)
-%     J = sum over all known vehicles of both approaches (tau - nat)^2
+%     J = sum over all known vehicles of both approaches of
+%         max(tau - nat, 0)^2 + w_adv min(tau - nat, 0)^2
+%     (delay, plus a small price for asking a vehicle to speed up)
 %     'opt'     the feasible joint assignment with the smallest J
-%               (exhaustive over the slots each turner could use alone)
-%     'strict'  as 'opt' without shaping or holding (existing gaps only)
-%     'greedy'  turners in order of arrival, each takes its earliest
-%               feasible slot given those already planned
-%     'fcfs'    turners in order of arrival, each takes the first feasible
-%               slot at or after its own position in the arrival order
+%               (exhaustive over the slots each turner could use alone,
+%               with and without pulling)
+%     'strict'  as 'opt' without shaping, pulling or holding (existing gaps only)
+%     'seq'     successive, as in [5]: turners in order of arrival, each takes
+%               its own lowest-cost slot given those already planned
+%
+%   Planning (cfg.plan)
+%     'rolling' every step, with the current predictions (proposed)
+%     'once'    once at the start of each green, for every turner known then;
+%               the same commands are repeated until the green ends ([5], CISE)
+%   Margins (cfg.margin)
+%     'geom'    from the conflict-zone geometry, PET and uncertainty (above)
+%     'fixed'   Db = Da = tau_safe = 4 s and h_min = 2 s ([5], CISE)
 %
 %   Messages (to CAVs only, every step while the plan stands)
 %     turner      go = t + tau_k (leave the waiting point), unless it cannot
 %                 clear its zone before the yellow ends (no slot this green)
-%     oncoming    tgt = t + tau_m at its stop line (arrival-time MPC) and
+%     shaped      tgt = t + tau_m at its stop line (arrival-time control) and
 %                 vadv = d_m / tau_m (speed advice), within hi_m
+%     pulled      tgt = t + tau_m with pull = true (drive up to the limit)
+%     (hard = true: an arrival-time MPC keeps it behind its point until tgt,
+%     so other vehicles may rely on it; an IDM vehicle only aims at tgt)
+%     eco         a CAV that has to wait anyway (behind a waiting turner, or
+%                 pushed by a slowed vehicle ahead) gets its planned time, so
+%                 it slows early instead of stopping late
 
-msgs = struct('id', {}, 'vadv', {}, 'tgt', {}, 'spt', {}, 'go', {});
-if isempty(W.ids), return; end
+msgs = struct('id', {}, 'vadv', {}, 'tgt', {}, 'spt', {}, 'go', {}, 'pull', {}, 'hard', {});
 C = G.C; L = C.VEH_L; sStop = C.L_APP - C.STOP; h = rsu.h_min;
 apps = 'EW'; z = cfg.unc_z;
 ctl = strcmp(cfg.msg, 'time') && strcmp(cfg.ctrl, 'mpc');
 strict = strcmp(cfg.slot, 'strict');
+once = strcmp(cfg.plan, 'once');
+fixedM = strcmp(cfg.margin, 'fixed');
+adv = cfg.adv && ~strict;
 s_ctl = 0.3; K = 2;
+if once
+    % plan once at the start of each east-west green, then repeat
+    [~, tg0] = signal_info(t, 'E', C);
+    if ~strcmp(sig.E, 'green') && ~strcmp(sig.W, 'green')
+        rsu.once_msgs = msgs; return;
+    end
+    if rsu.once_tg0 == tg0
+        msgs = rsu.once_msgs; return;
+    end
+    rsu.once_tg0 = tg0; rsu.once_msgs = msgs;
+    K = 50;                                        % every turner known now
+end
+if isempty(W.ids), return; end
 
 % ---------------- 1. lanes ----------------
 Ln = cell(1, 2);
@@ -128,6 +163,16 @@ for ai = 1:2
         cap = min(rsu.dmax, 0.5 * e.d(i) / e.v(i) * (1 / (1 - r) - 1));
         e.hi(i) = max(e.lo(i), e.nat(i) + cap);
     end
+    % earliest arrival if asked to drive up to the speed limit
+    e.lo_adv = e.lo;
+    if adv
+        for i = 1:n
+            if e.fixed(i) || e.turn(i) || e.mov(i) == 'R' || ~e.cav(i), continue; end
+            if e.d(i) < rsu.d_cmd || e.v(i) < 5, continue; end
+            t_fast = travel_time(e.d(i), e.v(i), 1.0, C.V_LIM);
+            e.lo_adv(i) = e.lo(i) - max(0, min(rsu.adv_max, e.d(i) / e.v(i) - t_fast));
+        end
+    end
     e.hold = ctl & e.cav & ~e.fixed & e.mov ~= 'R' & ~strict;   % may be held (arrival-time MPC)
     e.cmd = e.hold | e.hi > e.lo + 1e-6;                         % may be commanded at all
     e.onc = e.mov ~= 'R';                          % can conflict with the other turner
@@ -164,6 +209,7 @@ for ai = 1:2
             Db(m) = dexit - dent_k + rsu.pet + u;
             Da(m) = tclr_k - dent + rsu.pet + u;
             DaC(m) = tclr_k - dent + rsu.pet + z * sqrt(sig_k^2 + s_ctl^2);
+            if fixedM, Db(m) = rsu.tau_safe; Da(m) = rsu.tau_safe; DaC(m) = rsu.tau_safe; end
         end
         T(end+1) = struct('ai', ai, 'i', i, 'id', e.id(i), 'cidx', find(isfinite(Db)), ...
             'Db', Db, 'Da', Da, 'DaC', DaC, ...
@@ -181,43 +227,43 @@ for k = 1:nT
     sl = zeros(1, nT);
     for p = 1:numel(T(k).cidx) + 1
         sl(k) = p;
-        if evalSlots(Ln, T, sl, h), S{k} = [S{k}, p]; end
+        if evalBest(Ln, T, sl, h, adv, rsu.w_adv), S{k} = [S{k}, p]; end
     end
     if isempty(S{k}), S{k} = numel(T(k).cidx) + 1; end
 end
 nat_k = arrayfun(@(x) Ln{x.ai}.nat(x.i), T);
-best = []; bestJ = inf;
+best = [];
 switch cfg.slot
     case {'opt', 'strict'}
+        bestJ = inf;
         sizes = cellfun(@numel, S);
         idx = ones(1, nT);
         while true
             sl = arrayfun(@(k) S{k}(idx(k)), 1:nT);
             if laneOrderOk(T, sl)
-                [ok, tau, held, J] = evalSlots(Ln, T, sl, h);
-                if ok && J < bestJ, bestJ = J; best = struct('sl', sl, 'tau', {tau}, 'held', {held}); end
+                [ok, R] = evalBest(Ln, T, sl, h, adv, rsu.w_adv);
+                if ok && R.J < bestJ, bestJ = R.J; best = R; best.sl = sl; end
             end
             k = 1;
             while k <= nT && idx(k) == sizes(k), idx(k) = 1; k = k + 1; end
             if k > nT, break; end
             idx(k) = idx(k) + 1;
         end
-    case {'greedy', 'fcfs'}
-        sl = greedySlots(Ln, T, S, nat_k, h, cfg);
-        [ok, tau, held, J] = evalSlots(Ln, T, sl, h);
-        if ok, best = struct('sl', sl, 'tau', {tau}, 'held', {held}); bestJ = J; end
+    case 'seq'
+        sl = seqSlots(Ln, T, S, nat_k, h, adv, rsu.w_adv);
+        [ok, R] = evalBest(Ln, T, sl, h, adv, rsu.w_adv);
+        if ok, best = R; best.sl = sl; end
 end
 if isempty(best), return; end
 rsu.plans = rsu.plans + 1;
 % diagnostics: how often the joint optimizer chooses differently from the
-% sequential greedy rule (same limits)
+% successive slot search of [5] (same limits)
 if strcmp(cfg.slot, 'opt')
     rsu.diag(1) = rsu.diag(1) + 1;                       % plans
     rsu.diag(2) = rsu.diag(2) + (nT >= 2);               % plans with two or more turners
     rsu.diag(3) = rsu.diag(3) + any(cellfun(@numel, S) > 1);   % a real choice
-    cg = cfg; cg.slot = 'greedy';
-    slg = greedySlots(Ln, T, S, nat_k, h, cg);
-    rsu.diag(4) = rsu.diag(4) + any(slg ~= best.sl);     % different choice
+    sls = seqSlots(Ln, T, S, nat_k, h, adv, rsu.w_adv);
+    rsu.diag(4) = rsu.diag(4) + any(sls ~= best.sl);     % different choice
 end
 
 % ---------------- 4. messages ----------------
@@ -229,64 +275,103 @@ for k = 1:nT
         continue;
     end
     vadv = NaN; if tk > 0.5, vadv = (T(k).sp - e.s(i)) / tk; end
-    msgs(end+1) = struct('id', T(k).id, 'vadv', vadv, 'tgt', t + tk, 'spt', T(k).sp, 'go', t + tk); %#ok<AGROW>
+    msgs(end+1) = struct('id', T(k).id, 'vadv', vadv, 'tgt', t + tk, 'spt', T(k).sp, ...
+                         'go', t + tk, 'pull', false, 'hard', false); %#ok<AGROW>
 end
+timeMsg = strcmp(cfg.msg, 'time');
 for ai = 1:2
-    e = Ln{ai}; tau = best.tau{ai}; held = best.held{ai};
+    e = Ln{ai}; tau = best.tau{ai}; held = best.held{ai}; pulled = best.pulled{ai};
     for i = 1:numel(e.id)
-        if ~e.cmd(i), continue; end
+        if e.fixed(i) || e.turn(i) || ~e.cav(i) || e.mov(i) == 'R', continue; end
         k = e.ps(i);
         keep = k > 0 && t < rsu.shp.tgt(k);       % keep repeating a given target
-        tm = min(tau(i), e.hi(i));
-        if ~(held(i) || keep), continue; end
-        if k == 0
-            rsu.shp.id(end+1) = e.id(i); rsu.shp.nat(end+1) = t + e.nat(i);
-            rsu.shp.tgt(end+1) = t + tm; rsu.shp.t0(end+1) = t;
+        if pulled(i) && tau(i) < e.lo(i) - 0.3
+            % asked to arrive earlier (drive up to the speed limit)
+            kq = find(rsu.pul.id == e.id(i), 1);
+            if isempty(kq)
+                rsu.pul.id(end+1) = e.id(i); rsu.pul.gain(end+1) = e.lo(i) - tau(i);
+            else
+                rsu.pul.gain(kq) = max(rsu.pul.gain(kq), e.lo(i) - tau(i));
+            end
+            msgs(end+1) = struct('id', e.id(i), 'vadv', e.d(i) / max(tau(i), 0.5), ...
+                'tgt', t + tau(i), 'spt', sStop, 'go', NaN, 'pull', true, 'hard', false); %#ok<AGROW>
+            continue;
+        end
+        if e.cmd(i) && (held(i) || keep)
+            % shaped: asked to arrive a little later (or held at its time)
+            tm = min(tau(i), e.hi(i));
+            if k == 0
+                rsu.shp.id(end+1) = e.id(i); rsu.shp.nat(end+1) = t + e.nat(i);
+                rsu.shp.tgt(end+1) = t + tm; rsu.shp.t0(end+1) = t;
+            else
+                rsu.shp.tgt(k) = max(rsu.shp.tgt(k), min(t + tm, rsu.shp.nat(k) + rsu.dmax));
+                tm = max(tm, rsu.shp.tgt(k) - t);
+            end
+        elseif cfg.eco && timeMsg && tau(i) > e.lo(i) + 0.5
+            % eco: it has to wait anyway; arrive at the planned time
+            tm = tau(i);
+            if ~any(rsu.eco == e.id(i)), rsu.eco(end+1) = e.id(i); end
         else
-            rsu.shp.tgt(k) = max(rsu.shp.tgt(k), min(t + tm, rsu.shp.nat(k) + rsu.dmax));
-            tm = max(tm, rsu.shp.tgt(k) - t);
+            continue;
         end
         tg = t + tm;
-        if ~strcmp(cfg.msg, 'time'), tg = NaN; end   % speed advice only: no binding time
+        if ~timeMsg, tg = NaN; end                  % speed advice only: no binding time
         msgs(end+1) = struct('id', e.id(i), 'vadv', e.d(i) / max(tm, 0.5), ...
-                             'tgt', tg, 'spt', sStop, 'go', NaN); %#ok<AGROW>
+                             'tgt', tg, 'spt', sStop, 'go', NaN, 'pull', false, 'hard', ctl); %#ok<AGROW>
     end
 end
+if once, rsu.once_msgs = msgs; end
 end
 
 % ======================================================================
-function sl = greedySlots(Ln, T, S, nat_k, h, cfg)
-% turners in order of natural arrival; greedy: each its earliest feasible
-% slot; fcfs: the first feasible slot at or after its arrival-order position
+function sl = seqSlots(Ln, T, S, nat_k, h, adv, w_adv)
+% successive slot search of [5]: turners in order of natural arrival, each
+% takes its own lowest-cost slot given those already planned
 nT = numel(T);
 [~, ord] = sort(nat_k);
 sl = zeros(1, nT);
 for k = ord
-    opts = S{k};
-    if strcmp(cfg.slot, 'fcfs')
-        f = Ln{3 - T(k).ai};
-        p0 = 1 + sum(f.nat(T(k).cidx) < nat_k(k));
-        later = opts(opts >= p0);
-        if ~isempty(later), opts = [later, fliplr(opts(opts < p0))]; else, opts = fliplr(opts); end
-    end
-    bt = inf; bp = opts(end);
-    for p = opts
+    bJ = inf; bp = S{k}(end);
+    for p = S{k}
         sl(k) = p;
         if ~laneOrderOk(T, sl), continue; end
-        [ok, tau] = evalSlots(Ln, T, sl, h);
-        if ~ok, continue; end
-        tk = tau{T(k).ai}(T(k).i);
-        if strcmp(cfg.slot, 'fcfs'), bp = p; break; end
-        if tk < bt - 1e-9, bt = tk; bp = p; end
+        [ok, R] = evalBest(Ln, T, sl, h, adv, w_adv);
+        if ok && R.J < bJ - 1e-9, bJ = R.J; bp = p; end
     end
     sl(k) = bp;
 end
 end
 
-function [ok, tau, held, J] = evalSlots(Ln, T, sl, h)
-% times of a slot assignment (sl(k) = 0: turner k not planned)
+function [ok, R] = evalBest(Ln, T, sl, h, adv, w_adv)
+% the better of: no vehicle pulled forward / CAVs before each slot pulled
+[ok, tau, held, J, pulled] = evalSlots(Ln, T, sl, h, false, w_adv);
+R = struct('tau', {tau}, 'held', {held}, 'pulled', {pulled}, 'J', J);
+if adv
+    [ok2, tau2, held2, J2, pulled2] = evalSlots(Ln, T, sl, h, true, w_adv);
+    if ok2 && (~ok || J2 < J - 1e-9)
+        ok = true; R = struct('tau', {tau2}, 'held', {held2}, 'pulled', {pulled2}, 'J', J2);
+    end
+end
+end
+
+function [ok, tau, held, J, pulled] = evalSlots(Ln, T, sl, h, pull, w_adv)
+% times of a slot assignment (sl(k) = 0: turner k not planned); with pull,
+% the CAVs before each turner's slot start from their earliest time lo_adv
 tau = {Ln{1}.lo, Ln{2}.lo};
 held = {false(size(Ln{1}.lo)), false(size(Ln{2}.lo))};
+pulled = held;
+if pull
+    for k = 1:numel(T)
+        if sl(k) == 0, continue; end
+        bi = 3 - T(k).ai; c = T(k).cidx;
+        for j = 1:min(sl(k) - 1, numel(c))
+            m = c(j);
+            if Ln{bi}.lo_adv(m) < tau{bi}(m) - 1e-9
+                tau{bi}(m) = Ln{bi}.lo_adv(m); pulled{bi}(m) = true;
+            end
+        end
+    end
+end
 for it = 1:30
     changed = false;
     for ai = 1:2
@@ -327,6 +412,11 @@ J = 0;
 for ai = 1:2
     e = Ln{ai}; x = tau{ai};
     for i = 1:numel(e.id)
+        if x(i) < e.lo(i) - 0.01
+            if ~pulled{ai}(i) || x(i) < e.lo_adv(i) - 0.01, ok = false; return; end
+            continue;
+        end
+        pulled{ai}(i) = false;                     % not earlier after all
         if x(i) <= e.lo(i) + 0.01, continue; end
         if e.fixed(i), ok = false; return; end
         if e.turn(i), continue; end
@@ -335,11 +425,8 @@ for ai = 1:2
         ok = false; return;
     end
     m = ~e.fixed;
-    if strcmp(getenv('ABL_OBJ'), 'lin')               % diagnostic: linear total delay
-        J = J + sum(x(m) - e.nat(m));
-    else
-        J = J + sum((x(m) - e.nat(m)).^2);
-    end
+    dd = x(m) - e.nat(m);
+    J = J + sum(max(dd, 0).^2) + w_adv * sum(min(dd, 0).^2);
 end
 end
 

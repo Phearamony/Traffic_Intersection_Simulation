@@ -6,7 +6,7 @@ function [rsu, msgs] = rsu_step(rsu, t, sig, sigT, G, cfg)
 %   (rsu_crossed) the true arrival time becomes a training sample, an
 %   evaluation sample, or an online update of the PI-GPR.
 %   Planning (configurations with an RSU): rsu_plan, both approaches jointly.
-msgs = struct('id', {}, 'vadv', {}, 'tgt', {}, 'spt', {}, 'go', {});
+msgs = struct('id', {}, 'vadv', {}, 'tgt', {}, 'spt', {}, 'go', {}, 'pull', {}, 'hard', {});
 W = rsu_view(rsu, t);
 snap = abs(t / rsu.snap_every - round(t / rsu.snap_every)) < 1e-9;
 learn = rsu.collect || rsu.eval || (rsu.plan && cfg.online && strcmp(cfg.est, 'pigpr'));

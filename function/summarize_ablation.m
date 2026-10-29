@@ -50,14 +50,16 @@ writetable(stats, fullfile(out_dir, 'ablation_stats.csv'));
 
 % ---------- paired comparisons (B minus A) ----------
 cmp = { 'C1_human',        'C4_proposed';      % proposed vs uncoordinated
-        'C3_mpc_rsu_gpr',  'C4_proposed';      % proposed vs conference method
+        'C2_idm_rsu',      'C4_proposed';      % proposed vs the method of [5]
+        'C3_mpc_rsu_gpr',  'C4_proposed';      % proposed vs the CISE method
         'V2V_MPC',         'C4_proposed';      % proposed vs connected, no RSU
         'C4_no_unc',       'C4_proposed';      % uncertainty margins
         'C4_no_online',    'C4_proposed';      % online learning
         'C4_speed_adv',    'C4_proposed';      % arrival-time vs speed messages
         'C4_strict',       'C4_proposed';      % gap shaping vs existing gaps only
-        'C4_greedy',       'C4_proposed';      % optimizer vs earliest slot for the turner
-        'C4_fcfs',         'C4_proposed';      % optimizer vs first come, first served
+        'C4_seq',          'C4_proposed';      % joint vs successive slot search ([5])
+        'C4_no_adv',       'C4_proposed';      % pulling forward
+        'C4_once',         'C4_proposed';      % planning every step vs once per green
         'C2_idm_rsu',      'C3I_mpc_rsu';      % controller effect, IDM estimator
         'C2G_idm_rsu_gpr', 'C3_mpc_rsu_gpr';   % controller effect, GPR estimator
         'C2_idm_rsu',      'C2G_idm_rsu_gpr';  % estimator effect, IDM control
