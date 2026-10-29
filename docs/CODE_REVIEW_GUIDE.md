@@ -1,6 +1,6 @@
 # Review guide: traffic simulation v2 (code and math)
 
-Code state: branch `v2-engine`, commit `e3d786a` (final code of this round), which follows `979b6c2` (safe-side oncoming bounds), `b3dfe15` (second review round), `70d8d01` ("Fixes from the code review") and `0b64b16` (CAV gap check keeps PET after a vehicle has just cleared; once-per-green planning also plans turners that come into range later). All line numbers refer to `e3d786a`.
+Code state: branch `v2-engine`, commit `e3d786a` (final code of this round), which follows `979b6c2` (safe-side oncoming bounds), `b3dfe15` (second review round), `70d8d01` ("Fixes from the code review") and `0b64b16` (CAV gap check keeps PET after a vehicle has just cleared; once-per-green planning also plans turners that come into range later). All line numbers refer to `e3d786a`, except part 11 (fixes of October 30), which refers to the current `main`.
 
 ## How to use this guide
 
@@ -823,3 +823,58 @@ Fixed in b3dfe15: kinematic oncoming crossing times (queued straight vehicles in
 Fixed in 979b6c2: oncoming entry at full speed and exit from rest below 5 m/s (no more optimistic $D^a$ for vehicles that are stopped now); no messages at all when the plan without no-slot turners is infeasible; pull message threshold $x \le lo - 0.29$, equal to the feasibility rule.
 
 Fixed in e3d786a: oncoming exit time from rest when the vehicle is predicted to stop first; left-turners at arc speed no longer forced to start from rest; `once` mode retries after an inconsistent plan.
+
+---
+
+## 11. Fixes of October 30 (after this guide was written)
+
+A two-seed test showed C4 finishing 13 fewer vehicles than C4_STRICT on seed 101. The cause was four bugs, not the method. All four affect every RSU configuration (C2, C3 and all C4 variants). Line numbers in this part refer to the current `main`. In parts 4 and 6, lines of `sim/rsu_plan.m` after line 130 and of `sim/turn_gap_ok.m` after line 55 are now a few lines further down.
+
+### 11.1 Sliding go time (`sim/rsu_plan.m:141-145`)
+
+A turner standing at its waiting point is a few centimeters short of it. Its planned time was $lo = T(s_{wait} - s, 0, 1.5, v_t)$; for $s_{wait} - s = 0.05$ m:
+
+$$
+lo = \sqrt{2 \cdot 0.05 / 1.5} = 0.26 \text{ s}
+$$
+
+The engine releases a turner only when $t \ge go - 0.25$ (`sim/sim_run.m:193`). With $go = t + 0.26$ re-planned every step, that never happened: the turner waited until the plan changed or the light did. Now $lo = 0$ when $s_{wait} - s < 0.3$ m, the engine's own commit tolerance (`sim/sim_run.m:204`).
+
+### 11.2 Vehicles stuck behind a waiting turner (`sim/rsu_plan.m:133-169`, `495`)
+
+A straight or left-turning vehicle past its stop line, behind an uncommitted turner of its own lane at its waiting point, was planned as "fixed, crossing now" with $lo = -(s - s_{stop})/\max(v, 1)$. It cannot move until that turner leaves. With two opposing turners, each was planned after the vehicle stuck behind the other: a mutual right-turn deadlock. Now such a vehicle is planned in lane order behind its turner ($lo = 0$, $\sigma = 0.3$ s, not fixed) and may be later than $lo$ (`yld`, as a turner), because it yields to a turner in the junction (`sim/sim_run.m:214-237`, the same rule `turn_gap_ok` already used). It is never held or sent a message.
+
+### 11.3 Lane order in the CAV gap check (`sim/turn_gap_ok.m:55-80`, `130`)
+
+The CAV gap check ordered opposing vehicles only within one path. A straight vehicle behind a stopped or held left-turner (same lane, different path) was treated as free to accelerate into the junction, so the check refused gaps that the RSU had planned and made safe. Now, in mode `cav`, the opposing vehicles in the shared part of their approach lane ($s < s_{div} = 144$ m, where the left-turn arc starts) are taken in lane order:
+
+$$
+t_{leave}(u) = \max\Big(T(s_{div} - s_u, v_u, a_u, \max(V_{d,u}, v_u)),\ t_{hold,u},\ t_{leave}(u_{ahead}) + 1\Big)
+$$
+
+with $a_u = \max(a, 0)$ ($\ge 1.5$ when $v_u < 2$), $t_{hold,u}$ from an RSU target as in the existing hold term, and $t_{vac}$ for an opposing turner. Every opposing vehicle $j$ then needs $t_{arr,j} \ge t_{leave}(\text{vehicle ahead of } j) + 1$. The human rule is unchanged.
+
+### 11.4 Stale holds (`sim/rsu_plan.m:366-375`, `sim/rsu_step.m:41-53`)
+
+A CAV held at its natural time (no added delay) was stored as a shaping record, and a record is never taken back ($lo \ge t_{gt} - t$ every later step). Holds set while a lane was blocked by its waiting turner (natural times of 25 to 30 s) were kept after the turner had left, and the queue crawled at 0.1 to 0.3 m/s at a green light. These records were also counted as "shaped", so `n_shaped` was inflated. Now:
+
+- only a real delay ($t_m > nat + 0.3$ s) is stored; a hold is a command for one step;
+- a CAV that had a command last step and has none now gets a release message (all times NaN), which the MPC, the IDM time tracking, the go hold and the gap check all ignore.
+
+### 11.5 Effect (seeds 101 and 102, Octave, model trained on seeds 1-16)
+
+| Seed 101 | exited | delay [s] | fuel [L/100 km] | shaped |
+|---|---|---|---|---|
+| C4 before | 54 | 39.6 (survivor bias) | 11.34 | 19 |
+| C4 after | 68 | 52.3 | 10.33 | 0 |
+| C4_STRICT after | 68 | 52.1 | 10.30 | 0 |
+| C3 after | 71 | 42.0 | 10.11 | 1 |
+
+0 conflicts and 0 collisions in all 24 runs. The fixes remove the stalls; they also show that, with the current margins, the optimizer rarely finds a gap worth shaping (see 11.6).
+
+### 11.6 Things to check (part 11)
+
+- **The optimizer rarely acts.** After the fixes C4 shaped 0 and 2 vehicles, and C4_SEQ equals C4 on both seeds. With $z = 0$ (C4_NOUNC) the joint search chose differently from the successive one in 31 of 221 plans on seed 101. The safe-side margins (6.5: $D^a = 5.1$ s from rest) plus $z\sigma$ leave few feasible slots. This is open question 2 of part 10, now measured.
+- A release is a message: with packet loss an old hold can still last up to 10 s (the MPC accepts a target received within 10 s, `sim/ctrl_mpc.m:125`).
+- The 0.3 m waiting-point tolerance and $\sigma = 0.3$ s for a blocked vehicle are choices; state them.
+- $t_{leave}$ uses the same optimistic acceleration as the rest of the CAV check (1.5 m/s² from rest).
