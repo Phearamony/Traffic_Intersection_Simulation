@@ -37,6 +37,7 @@ rsu.w_adv = 0.25;                    % price of asking a vehicle to arrive earli
 rsu.shp = struct('id', zeros(1, 0), 'nat', zeros(1, 0), 'tgt', zeros(1, 0), 't0', zeros(1, 0));
 rsu.pul = struct('id', zeros(1, 0), 'gain', zeros(1, 0));   % pulled forward
 rsu.eco = zeros(1, 0);               % CAVs that got an eco arrival time
+rsu.lastCmd = zeros(1, 0);           % CAVs that got a command in the last step (for releases)
 rsu.once_tg0 = -inf;                 % planning once per green: green already planned
 rsu.once_ids = zeros(1, 0);          % turners already planned in this green
 rsu.once_msgs = struct('id', {}, 'vadv', {}, 'tgt', {}, 'spt', {}, 'go', {}, 'pull', {}, 'hard', {});

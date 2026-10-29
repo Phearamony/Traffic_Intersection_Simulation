@@ -41,5 +41,14 @@ if snap && learn && ~isempty(W.ids)
 end
 if rsu.plan
     [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg);     % both approaches together
+    % a CAV that had a command last step and has none now is released (all
+    % times NaN), so an old hold or go time is never kept after the plan
+    % no longer needs it
+    cur = [msgs.id];
+    for id = setdiff(rsu.lastCmd, cur)
+        msgs(end+1) = struct('id', id, 'vadv', NaN, 'tgt', NaN, 'spt', NaN, 'go', NaN, ...
+                             'pull', false, 'hard', false); %#ok<AGROW>
+    end
+    rsu.lastCmd = cur;
 end
 end

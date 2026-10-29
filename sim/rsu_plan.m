@@ -56,7 +56,9 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %     t_fast_m: its time to the stop line accelerating at 1 m/s^2 up to the
 %     speed limit (never faster than the limit). Human drivers and vehicles
 %     past the stop line cannot be asked; a vehicle behind a slowed one just
-%     follows it. A given later target is never taken back.
+%     follows it. A given later target (a real delay) is never taken back; a
+%     hold at the natural time lasts one step and is released (rsu_step) as
+%     soon as the plan no longer needs it.
 %     An assignment is feasible when every vehicle that is later than lo is
 %     a turner, is pushed by the vehicle ahead, or is a CAV within hi, and
 %     every vehicle earlier than lo is a pulled CAV within lo_adv.
@@ -377,8 +379,13 @@ for ai = 1:2
             % shaped: asked to arrive a little later (or held at its time)
             tm = min(tau(i), e.hi(i));
             if k == 0
-                rsu.shp.id(end+1) = e.id(i); rsu.shp.nat(end+1) = t + e.nat(i);
-                rsu.shp.tgt(end+1) = t + tm; rsu.shp.t0(end+1) = t;
+                % only a real delay is stored (and then never taken back); a
+                % hold at its natural time is a command for this step only,
+                % so it ends when the plan no longer needs it
+                if tm > e.nat(i) + 0.3
+                    rsu.shp.id(end+1) = e.id(i); rsu.shp.nat(end+1) = t + e.nat(i);
+                    rsu.shp.tgt(end+1) = t + tm; rsu.shp.t0(end+1) = t;
+                end
             else
                 rsu.shp.tgt(k) = max(rsu.shp.tgt(k), min(t + tm, rsu.shp.nat(k) + rsu.dmax));
                 tm = max(tm, rsu.shp.tgt(k) - t);
