@@ -17,7 +17,7 @@ function D = sweep_definitions()
 %     xlabel  axis label;  xscale  factor applied to values for the axis
 %
 %   Configuration names: C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4,
-%   C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE (sim/sim_config.m)
+%   C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE, C4_NOYIELD (sim/sim_config.m)
 
 D = struct();
 

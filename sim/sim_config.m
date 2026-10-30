@@ -32,6 +32,8 @@ function cfg = sim_config(name)
 %           'fixed' 4 s safety gap and 2 s headway ([5], CISE)
 %   adv     1 = the RSU may also ask CAVs to arrive earlier (up to the limit)
 %   eco     1 = CAVs that have to wait anyway get their planned arrival time
+%   yield   1 = courtesy yield: a queued or slow oncoming CAV that can stop
+%           gently may wait up to 5 s longer to let a turner go first
 %   label   results label;  fig  suffix of the figure names
 %
 %   Reference methods, rebuilt in this engine with the same traffic, the
@@ -43,7 +45,7 @@ function cfg = sim_config(name)
 
 c = struct('ctrl', 'idm', 'coord', 'none', 'est', 'idm', 'msg', 'speed', ...
            'unc_z', 0, 'online', 0, 'spat', 0, 'slot', 'opt', 'plan', 'rolling', ...
-           'margin', 'geom', 'adv', 0, 'eco', 0, 'label', '', 'fig', '', 'name', name);
+           'margin', 'geom', 'adv', 0, 'eco', 0, 'yield', 0, 'label', '', 'fig', '', 'name', name);
 ref = {'coord', 'rsu'; 'spat', 1; 'msg', 'time'; 'slot', 'seq'; 'plan', 'once'; ...
        'margin', 'fixed'; 'eco', 1};
 switch upper(name)
@@ -68,7 +70,7 @@ switch upper(name)
         c.label = 'C3_mpc_rsu_gpr';  c.fig = 'mpc_rsu_gpr';
     case 'C4'                                  % proposed
         c.coord = 'rsu'; c.ctrl = 'mpc'; c.est = 'pigpr'; c.spat = 1;
-        c.msg = 'time'; c.unc_z = 1.645; c.online = 1; c.adv = 1; c.eco = 1;
+        c.msg = 'time'; c.unc_z = 1.645; c.online = 1; c.adv = 1; c.eco = 1; c.yield = 1;
         c.label = 'C4_proposed';     c.fig = 'proposed';
     case 'C4_NOUNC'
         c = sim_config('C4'); c.unc_z = 0;
@@ -88,6 +90,9 @@ switch upper(name)
     case 'C4_NOADV'
         c = sim_config('C4'); c.adv = 0;
         c.label = 'C4_no_adv';       c.fig = 'proposed_no_adv';
+    case 'C4_NOYIELD'
+        c = sim_config('C4'); c.yield = 0;
+        c.label = 'C4_no_yield';     c.fig = 'proposed_no_yield';
     case 'C4_ONCE'
         c = sim_config('C4'); c.plan = 'once';
         c.label = 'C4_once';         c.fig = 'proposed_once';
