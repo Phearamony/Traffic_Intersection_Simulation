@@ -45,11 +45,9 @@ that possible. Human drivers have no V2X: the RSU can neither see nor instruct t
    with the least total delay. The right-turner always yields (Road Traffic Act, art. 37): its on-board
    check only lets it turn into a gap that exists. To make a gap the RSU may ask oncoming CAVs to arrive a
    little later (at most 2 s, never below 0.7 of their speed, about 1 m/s^2, no new command within 40 m of
-   the stop line) or, for the car before the gap, a little earlier (up to the speed limit). A queued or
-   slow oncoming CAV that can stop gently may also wait up to 5 s longer and let the turner go first
-   (courtesy yield, as drivers do by flashing their lights). Safety margins come from the conflict-zone
-   geometry, a post-encroachment margin and `z * sigma`; an oncoming car's earliest entry is bounded by how
-   fast it can be at its stop line, accelerating at most 2 m/s^2 (3 m/s^2 for a human driver).
+   the stop line) or, for the car before the gap, a little earlier (up to the speed limit). Safety margins
+   come from the conflict-zone geometry, a post-encroachment margin and `z * sigma` of the vehicles the RSU
+   does not control.
 3. **Arrival-time MPC and eco approach.** The RSU sends target times (not speeds) to every CAV it plans
    for: the turner (when to go), oncoming CAVs (shaped or pulled forward), and CAVs that have to wait
    anyway (behind a waiting turner), so they slow early instead of stopping late. Each CAV solves a QP-MPC
@@ -101,7 +99,6 @@ cise/         everything of the conference paper: v1 code, its full results, old
 | C4_SEQ | as C4, turners one after another (the successive search of [5]) | | | |
 | C4_NOADV | as C4, oncoming CAVs only asked to arrive later, never earlier | | | |
 | C4_ONCE | as C4, planned once per green (as [5]) | | | |
-| C4_NOYIELD | as C4, no courtesy yield (a stopped oncoming CAV is never asked to wait longer) | | | |
 
 Set the configuration by name in `main_one.m` or `main_animation.m`.
 
@@ -131,10 +128,10 @@ Then open a script in `main/`, change the settings block at the top if you want,
 
 | Script | What it does | Time (MATLAB, rough) |
 |---|---|---|
-| `main_animation.m` | Live animation of the configurations you list (default C1, C2, C3, C4; `'ALL'` for all thirteen), one after another on the same traffic. Close the window to skip to the next. Nothing is saved | a few minutes each |
+| `main_animation.m` | Live animation of the configurations you list (default C1, C2, C3, C4; `'ALL'` for all twelve), one after another on the same traffic. Close the window to skip to the next. Nothing is saved | a few minutes each |
 | `main_train.m` | Train the estimators (GPR, PI-GPR) on seeds 1-20. **Run it first, and again after any change to the traffic model** | 15-30 min |
 | `main_one.m` | Run one configuration, with or without animation, and save its figures | a few minutes |
-| `main_all.m` | Everything for the paper: training, main study (13 configurations x 20 seeds), figures, scenarios, stress tests | about a day; switch parts off in its settings |
+| `main_all.m` | Everything for the paper: training, main study (12 configurations x 20 seeds), figures, scenarios, stress tests | about a day; switch parts off in its settings |
 | `main_figures.m` | Redraw the figures from results that already exist | 10-20 min |
 
 After `git pull`, start with `main_train.m`, look at one run with `main_animation.m`, then start

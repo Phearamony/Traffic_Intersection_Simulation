@@ -9,7 +9,7 @@ function watch_main(name, seed, varargin)
 %   watch_main('C4', 101, 'VIEW', 150)        % whole road instead of the junction
 %
 %   name   C1, V2V_IDM, V2V_MPC, C2, C2G, C3I, C3, C4, C4_NOUNC, C4_NOONLINE,
-%          C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE, C4_NOYIELD (or the old script names, e.g. main_v2v_mpc_rsu_gpr)
+%          C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE (or the old script names, e.g. main_v2v_mpc_rsu_gpr)
 %   seed   traffic seed (default 101)
 %   extra  any ABL_* setting as name/value pairs (see abl_settings.m), and
 %          'VIEW', half-width of the view in meters (default 60)

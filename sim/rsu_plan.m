@@ -186,18 +186,12 @@ for ai = 1:2
     e.nat = min(e.nat, e.lo);
     e.hi = e.lo;
     for i = 1:n
-        if e.fixed(i) || e.turn(i) || e.yld(i) || e.mov(i) == 'R' || ~e.cav(i) || strict, continue; end
-        if e.d(i) >= rsu.d_cmd && e.v(i) >= 5
-            % moving: slow a little (at most a_shape over half the distance)
-            r = 1 - sqrt(max(0, 1 - rsu.a_shape * e.d(i) / e.v(i)^2));
-            r = min(r, 1 - rsu.v_frac);
-            cap = min(rsu.dmax, 0.5 * e.d(i) / e.v(i) * (1 / (1 - r) - 1));
-            e.hi(i) = max(e.lo(i), e.nat(i) + cap);
-        elseif cfg.yield && e.v(i) < 5 && e.v(i)^2 / (2 * max(e.d(i) - 0.5, 0.5)) <= rsu.a_shape
-            % courtesy yield: a queued or slow CAV that can stop gently before
-            % its line waits a little longer and lets the turner go first
-            e.hi(i) = max(e.lo(i), e.nat(i) + rsu.d_yield);
-        end
+        if e.fixed(i) || e.turn(i) || e.mov(i) == 'R' || ~e.cav(i) || strict, continue; end
+        if e.d(i) < rsu.d_cmd || e.v(i) < 5, continue; end      % too close or queued
+        r = 1 - sqrt(max(0, 1 - rsu.a_shape * e.d(i) / e.v(i)^2));
+        r = min(r, 1 - rsu.v_frac);
+        cap = min(rsu.dmax, 0.5 * e.d(i) / e.v(i) * (1 / (1 - r) - 1));
+        e.hi(i) = max(e.lo(i), e.nat(i) + cap);
     end
     % earliest arrival if asked to drive up to the speed limit
     e.lo_adv = e.lo;
@@ -237,8 +231,8 @@ for ai = 1:2
             qz = rowFor(rows, G, o, f.mov(m));
             if isempty(qz), continue; end
             % times from its stop line, bounded on the safe side (its speed at
-            % the stop line is not known): it ENTERS the zone at the earliest
-            % at the fastest speed it can have at the line (below), and
+            % the stop line is not known): it ENTERS the zone at the earliest at
+            % full speed vcap (speed limit; a left-turner: its arc speed), and
             % it LEAVES at the latest keeping its present speed, or starting
             % from rest when it is slow now (queue), accelerating at 1.5 m/s^2
             vcap = C.V_LIM;
@@ -249,14 +243,7 @@ for ai = 1:2
             % later than its free travel (it will stop in a queue first)
             v0m = min(f.v(m), vcap);
             if v0m < min(5, 0.8 * vcap) || f.lo(m) > f.d(m) / max(f.v(m), 0.1) + 1.5, v0m = 0; end
-            % earliest entry: it cannot be faster at its stop line than
-            % accelerating at a_max from now (a CAV's MPC bound; 3 m/s^2 for a human)
-            amax = rsu.a_max; if ~f.cav(m), amax = 3.0; end
-            vline = vcap;
-            if ~f.fixed(m) && ~f.yld(m)
-                vline = min(vcap, sqrt(f.v(m)^2 + 2 * amax * max(f.d(m), 0)));
-            end
-            dent = travel_time(qz(4) - sStop, vline, amax, vcap);
+            dent = (qz(4) - sStop) / vcap;
             dexit = travel_time(qz(5) + L - sStop, v0m, 1.5, vcap);
             dent_k = travel_time(qz(2) - P.s_wait, v_t0, 1.5, vt);
             tclr_k = travel_time(qz(3) + L - P.s_wait, v_t0, 1.5, vt);
@@ -386,7 +373,7 @@ for ai = 1:2
                     rsu.shp.tgt(end+1) = t + tm; rsu.shp.t0(end+1) = t;
                 end
             else
-                rsu.shp.tgt(k) = max(rsu.shp.tgt(k), min(t + tm, rsu.shp.nat(k) + max(rsu.dmax, e.hi(i) - e.nat(i))));
+                rsu.shp.tgt(k) = max(rsu.shp.tgt(k), min(t + tm, rsu.shp.nat(k) + rsu.dmax));
                 tm = max(tm, rsu.shp.tgt(k) - t);
             end
         elseif cfg.eco && timeMsg && tau(i) > e.lo(i) + 0.5

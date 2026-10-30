@@ -13,8 +13,7 @@ function run_ablation(seeds, kkmax, with_estimator, cfgs)
 %     C4 proposed | C4 with one part changed: C4_NOUNC (no uncertainty
 %     margins), C4_NOONLINE (no online learning), C4_SPEED (speed advice),
 %     C4_STRICT (existing gaps only), C4_SEQ (turners one after another,
-%     as [5]), C4_NOADV (no pulling forward), C4_ONCE (planned once per green),
-%     C4_NOYIELD (no courtesy yield of stopped CAVs)
+%     as [5]), C4_NOADV (no pulling forward), C4_ONCE (planned once per green)
 %   Also available: V2V_IDM, C2G, C3I (the factorial of the CISE paper).
 %   All share the traffic of each seed. Output in output/2_main_study/:
 %     ablation_runs.csv     one row per (seed, configuration), every metric
@@ -30,7 +29,7 @@ if nargin < 2 || isempty(kkmax), kkmax = 720; end
 if nargin < 3 || isempty(with_estimator), with_estimator = false; end
 if nargin < 4 || isempty(cfgs)
     cfgs = {'C1', 'V2V_MPC', 'C2', 'C3', 'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', ...
-            'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE', 'C4_NOYIELD'};
+            'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE'};
 end
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
