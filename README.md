@@ -79,8 +79,6 @@ function/     settings, traffic schedule, runners (study, sweeps, scenarios, tra
               statistics and figure functions
 main/         the scripts you run (F5), see below
 output/       results of this version, one folder per step (see below and output/README.md)
-docs/         CODE_REVIEW_GUIDE.md: every formula of the code with file and line numbers,
-              computed example values and the open questions for review
 cise/         everything of the conference paper: v1 code, its full results, older files
               (see cise/README.md); new runs never write there
 ```
