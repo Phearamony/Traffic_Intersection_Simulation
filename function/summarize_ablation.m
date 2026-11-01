@@ -60,6 +60,12 @@ cmp = { 'C1_human',        'C4_proposed';      % proposed vs uncoordinated
         'C4_seq',          'C4_proposed';      % joint vs successive slot search ([5])
         'C4_no_adv',       'C4_proposed';      % pulling forward
         'C4_once',         'C4_proposed';      % planning every step vs once per green
+        'C4_proposed',     'C4_lead_turn';     % cooperative leading right turn, 15 s limit
+        'C4_proposed',     'C4_lead_turn_tp';  % lead turn, throughput-priced cost
+        'C4_lead_turn',    'C4_lead_turn_tp';  % fixed hold limit vs priced cost
+        'V2V_MPC',         'C4_lead_turn_tp';  % lead turn vs connected, no RSU
+        'C2_idm_rsu',      'C4_lead_turn_tp';  % lead turn vs the method of [5]
+        'C3_mpc_rsu_gpr',  'C4_lead_turn_tp';  % lead turn vs the CISE method
         'C2_idm_rsu',      'C3I_mpc_rsu';      % controller effect, IDM estimator
         'C2G_idm_rsu_gpr', 'C3_mpc_rsu_gpr';   % controller effect, GPR estimator
         'C2_idm_rsu',      'C2G_idm_rsu_gpr';  % estimator effect, IDM control

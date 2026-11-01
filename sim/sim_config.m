@@ -43,7 +43,7 @@ function cfg = sim_config(name)
 
 c = struct('ctrl', 'idm', 'coord', 'none', 'est', 'idm', 'msg', 'speed', ...
            'unc_z', 0, 'online', 0, 'spat', 0, 'slot', 'opt', 'plan', 'rolling', ...
-           'margin', 'geom', 'adv', 0, 'eco', 0, 'label', '', 'fig', '', 'name', name);
+           'margin', 'geom', 'adv', 0, 'eco', 0, 'gi', 0, 'clt', 0, 'jtp', 0, 'label', '', 'fig', '', 'name', name);
 ref = {'coord', 'rsu'; 'spat', 1; 'msg', 'time'; 'slot', 'seq'; 'plan', 'once'; ...
        'margin', 'fixed'; 'eco', 1};
 switch upper(name)
@@ -91,6 +91,15 @@ switch upper(name)
     case 'C4_ONCE'
         c = sim_config('C4'); c.plan = 'once';
         c.label = 'C4_once';         c.fig = 'proposed_once';
+    case 'C4_GI'                               % C4 + gap insertion
+        c = sim_config('C4'); c.gi = 1;
+        c.label = 'C4_gap_insert';   c.fig = 'proposed_gi';
+    case 'C4_CLT'                              % C4 + cooperative leading right turn
+        c = sim_config('C4'); c.clt = 1;
+        c.label = 'C4_lead_turn';    c.fig = 'proposed_clt';
+    case 'C4_CLTP'                             % lead turn, throughput-priced slot cost
+        c = sim_config('C4_CLT'); c.jtp = 1;
+        c.label = 'C4_lead_turn_tp'; c.fig = 'proposed_cltp';
     otherwise
         error('sim_config: unknown configuration %s', name);
 end

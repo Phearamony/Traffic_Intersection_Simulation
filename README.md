@@ -99,11 +99,18 @@ cise/         everything of the conference paper: v1 code, its full results, old
 | C4_SEQ | as C4, turners one after another (the successive search of [5]) | | | |
 | C4_NOADV | as C4, oncoming CAVs only asked to arrive later, never earlier | | | |
 | C4_ONCE | as C4, planned once per green (as [5]) | | | |
+| C4_CLT | as C4 + cooperative leading right turn: queued or slow oncoming CAVs near the stop line become decision variables and may be held (up to 15 s) so the front right-turner goes first | | | |
+| **C4_CLTP** | **as C4_CLT, with a throughput-priced slot cost (vehicle-seconds of delay, a price per vehicle pushed past the end of green, and the unseen queue tail); the cost decides the hold, up to 25 s** | | | |
 
 Set the configuration by name in `main_one.m` or `main_animation.m`.
 
 Also available (not in the default study): V2V_IDM, C2G (C2 with GPR), C3I (C3 with the IDM estimator),
 the factorial of the CISE paper.
+C4_GI (gap insertion) is the first version of the lead turn, kept for reference.
+
+Lead-turn holds (C4_CLT, C4_CLTP): a held CAV is released as soon as the plan no longer puts its turner
+before it, when the turner commits, or at the hold limit. A held target is never renewed by itself. The
+right-turner still yields (art. 37): it only turns into the gap the held CAV leaves.
 
 Right-turn priority: every configuration follows the Road Traffic Act (art. 37). The right-turner yields:
 its on-board check only lets it turn into a gap that exists. Every RSU configuration, including C2 and C3,

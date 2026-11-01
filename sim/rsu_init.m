@@ -34,6 +34,24 @@ rsu.a_shape = 1.0;                   % [m/s2] deceleration used for the limit
 rsu.d_cmd = 40;                      % [m] no new command closer to the stop line
 rsu.adv_max = 1.5;                   % [s] largest gain asked of a pulled CAV (cfg.adv)
 rsu.w_adv = 0.25;                    % price of asking a vehicle to arrive earlier
+% gap insertion (cfg.gi): the RSU may hold an oncoming CAV at its stop line
+rsu.gi_hmax = 20;                    % [s] longest hold of one oncoming CAV
+rsu.gi_b = 3.0;                      % [m/s2] it must be able to stop at this deceleration
+rsu.gi_gap = 10;                     % [s] green time one inserted gap costs (about Db + Da)
+rsu.gi_hsat = 2.0;                   % [s] saturation headway (vehicles per green second)
+rsu.gi_margin = 1.0;                 % [veh] net gain required before a gap is inserted
+rsu.gi_reach = 3.0;                  % [s] turner at most this far from its waiting point
+% cooperative leading right turn (cfg.clt): queued or slow oncoming CAVs may
+% be held so that the front right-turner goes first
+rsu.clt_dmax = 15;                   % [s] longest hold of one oncoming CAV (cfg.jtp = 0)
+rsu.clt_win = 15;                    % [s] only CAVs due within this time of the turner
+rsu.clt_reach = 6;                   % [s] turner at most this far from its waiting point
+rsu.clt_dmax_tp = 25;                % [s] hold limit and window with the throughput price (cfg.jtp)
+% throughput-priced slot cost (cfg.jtp)
+rsu.tp_R = 60;                       % [s] price of a known vehicle pushed past the end of green (about one red)
+rsu.tp_edge = 110;                   % [m] a lane is saturated to the edge of view when its last vehicle is this far out
+rsu.gi_ids = zeros(1, 0);            % CAVs held for an inserted gap
+rsu.gi_tid = zeros(1, 0);            % the turner each was held for
 rsu.shp = struct('id', zeros(1, 0), 'nat', zeros(1, 0), 'tgt', zeros(1, 0), 't0', zeros(1, 0));
 rsu.pul = struct('id', zeros(1, 0), 'gain', zeros(1, 0));   % pulled forward
 rsu.eco = zeros(1, 0);               % CAVs that got an eco arrival time

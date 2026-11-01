@@ -122,6 +122,19 @@ if once
 end
 if isempty(W.ids), return; end
 
+% gap insertion: a hold ends once the turner it was made for has gone
+% (committed or out of view); its stored target is cut to now
+if (cfg.gi || cfg.clt) && ~isempty(rsu.gi_ids)
+    for q = numel(rsu.gi_ids):-1:1
+        r = find(W.ids == rsu.gi_tid(q), 1);
+        if isempty(r) || W.committed(r)
+            k = find(rsu.shp.id == rsu.gi_ids(q), 1);
+            if ~isempty(k), rsu.shp.tgt(k) = min(rsu.shp.tgt(k), t); end
+            rsu.gi_ids(q) = []; rsu.gi_tid(q) = [];
+        end
+    end
+end
+
 % ---------------- 1. lanes ----------------
 Ln = cell(1, 2);
 for ai = 1:2
@@ -205,7 +218,17 @@ for ai = 1:2
     end
     e.hold = ctl & e.cav & ~e.fixed & ~e.yld & e.mov ~= 'R' & ~strict;   % may be held (arrival-time MPC)
     e.cmd = e.hold | e.hi > e.lo + 1e-6;                         % may be commanded at all
+    e.gi = false(size(e.id));                      % may be held for an inserted gap (cfg.gi)
     e.onc = e.mov ~= 'R';                          % can conflict with the other turner
+    % throughput price (cfg.jtp): the end of this lane's green, and the weight
+    % of a delay of its last known vehicle when the lane is saturated up to the
+    % edge of the RSU's view (the delay then carries on to the unseen vehicles
+    % behind it: tail/h_sat of them miss the green, each waiting about tp_R)
+    e.jtp = cfg.jtp; e.tend = inf; e.wt = 0; e.R = rsu.tp_R;
+    if cfg.jtp
+        if strcmp(sig.(a), 'green'), e.tend = sigT.(a)(2) - t; end
+        if n > 0 && e.d(n) >= rsu.tp_edge, e.wt = rsu.tp_R / rsu.gi_hsat; end
+    end
     Ln{ai} = e;
 end
 
@@ -262,6 +285,71 @@ end
 nT = numel(T);
 if once, rsu.once_ids = unique([rsu.once_ids, [T.id], turners]); end   % handled in this green
 if nT == 0, return; end
+
+% ---------------- 2b. gap insertion (cfg.gi) ----------------
+% a turner near its waiting point with a long queue behind it and enough
+% green left may be given a gap made by holding oncoming CAVs at their stop
+% line: up to gi_hmax for CAVs that can still stop at gi_b (the optimizer
+% then decides whether to use it). Gate: vehicles the gap releases against
+% oncoming vehicles it delays (see below), in vehicles.
+giT = zeros(1, 2);                                   % turner each lane's holds are for
+if cfg.gi && ctl && ~strict
+    for k = 1:nT
+        ai = T(k).ai; bi = 3 - ai; e = Ln{ai}; i = T(k).i;
+        if e.lo(i) > rsu.gi_reach, continue; end
+        if any([T.ai] == ai & [T.i] < i), continue; end   % not the front turner of its lane
+        % released: the turner, a turner right behind it (same gap, group
+        % release), and the through vehicles behind them up to the next
+        % turner of the lane (which blocks the lane again)
+        t0 = max(e.lo(i), 0);
+        Trem = T(k).tend - t0 - rsu.gi_gap;
+        rel = 1; j = i + 1;
+        if j <= numel(e.id) && e.turn(j), rel = 2; j = j + 1; end
+        while j <= numel(e.id) && ~e.turn(j) && e.mov(j) ~= 'R', rel = rel + 1; j = j + 1; end
+        gain = min(rel, 1 + max(Trem, 0) / rsu.gi_hsat);
+        % cost: oncoming vehicles due within the gap (each loses about one
+        % gap), plus the start-up loss of the held one
+        f = Ln{bi};
+        nwin = sum(~f.fixed & ~f.yld & f.mov ~= 'R' & f.lo >= t0 - 1 & f.lo <= t0 + rsu.gi_gap);
+        cost = nwin + 1;
+        if gain < cost + rsu.gi_margin, continue; end
+        for m = T(k).cidx
+            if f.fixed(m) || f.turn(m) || f.yld(m) || ~f.cav(m) || f.mov(m) == 'R', continue; end
+            if f.d(m) < f.v(m)^2 / (2 * rsu.gi_b) + 1, continue; end
+            % only a car that would arrive within one gap of the turner's start
+            if f.lo(m) > max(e.lo(i), 0) + rsu.gi_gap, continue; end
+            f.hi(m) = max(f.hi(m), f.nat(m) + rsu.gi_hmax);
+            f.cmd(m) = true; f.gi(m) = true;
+        end
+        Ln{bi} = f; giT(bi) = T(k).id;
+    end
+end
+
+% ---------------- 2c. cooperative leading turn (cfg.clt) ----------------
+% the front turner of a lane near its stop line may go before the queued
+% (stationary or slow) CAVs at the head of the opposing queue: they become
+% decision variables with a release delay of up to clt_dmax; the slot search
+% decides by J whether to use it (art. 37: the through CAV waits on the
+% RSU's command, the turner only turns into a gap that exists)
+if cfg.clt && ctl && ~strict
+    dmc = rsu.clt_dmax; wnc = rsu.clt_win;
+    if cfg.jtp, dmc = rsu.clt_dmax_tp; wnc = dmc; end
+    for k = 1:nT
+        ai = T(k).ai; bi = 3 - ai; e = Ln{ai}; i = T(k).i;
+        if e.lo(i) > rsu.clt_reach, continue; end
+        if any([T.ai] == ai & [T.i] < i), continue; end   % front turner only
+        f = Ln{bi}; any_m = false;
+        for m = T(k).cidx
+            if f.fixed(m) || f.turn(m) || f.yld(m) || ~f.cav(m) || f.mov(m) == 'R', continue; end
+            if f.v(m) > 0.5 && f.d(m) < f.v(m)^2 / (2 * rsu.gi_b) + 1, continue; end   % moving: must still stop gently
+            if f.d(m) >= rsu.d_cmd && f.v(m) >= 5, continue; end      % far movers: normal shaping
+            if f.lo(m) > max(e.lo(i), 0) + wnc, continue; end
+            f.hi(m) = max(f.hi(m), f.nat(m) + dmc);
+            f.cmd(m) = true; f.gi(m) = true; any_m = true;
+        end
+        Ln{bi} = f; if any_m, giT(bi) = T(k).id; end
+    end
+end
 
 % ---------------- 3. slot search ----------------
 % slots each turner could use on its own (a joint assignment only adds delays)
@@ -330,6 +418,28 @@ if ~shapeOK                                       % no consistent plan this step
     return;
 end
 
+% a lead-turn hold is only kept while its turner is planned before the held
+% vehicles; otherwise they are released at once (no hold without a turn)
+if cfg.clt
+    for bi = 1:2
+        if giT(bi) == 0, continue; end
+        k = find([T.id] == giT(bi), 1); f = Ln{bi};
+        rel = f.gi;                                      % release all ...
+        if ~isempty(k) && ~noslot(k)
+            tk = best.tau{T(k).ai}(T(k).i);
+            if any(f.gi & best.tau{bi} > tk)
+                rel = f.gi & best.tau{bi} <= tk;         % ... or those planned before the turner
+            end
+        end
+        if ~any(rel), continue; end
+        for m = find(rel)
+            q = find(rsu.shp.id == f.id(m), 1);
+            if ~isempty(q), rsu.shp.tgt(q) = min(rsu.shp.tgt(q), t); end
+            g = find(rsu.gi_ids == f.id(m)); rsu.gi_ids(g) = []; rsu.gi_tid(g) = [];
+        end
+        f.cmd(rel) = false; f.gi(rel) = false; Ln{bi} = f;
+    end
+end
 % ---------------- 4. messages ----------------
 for k = 1:nT
     e = Ln{T(k).ai}; i = T(k).i;
@@ -364,6 +474,11 @@ for ai = 1:2
         if e.cmd(i) && (held(i) || keep)
             % shaped: asked to arrive a little later (or held at its time)
             tm = min(tau(i), e.hi(i));
+            if e.gi(i) && tm > e.nat(i) + rsu.dmax + 0.01 && ~any(rsu.gi_ids == e.id(i))
+                rsu.gi_ids(end+1) = e.id(i); rsu.gi_tid(end+1) = giT(ai);   % held for an inserted gap
+            end
+            capk = rsu.dmax;
+            if any(rsu.gi_ids == e.id(i)), capk = max(rsu.gi_hmax * cfg.gi, cfg.clt * (rsu.clt_dmax + cfg.jtp * (rsu.clt_dmax_tp - rsu.clt_dmax))); end
             if k == 0
                 % only a real delay is stored (and then never taken back); a
                 % hold at its natural time is a command for this step only,
@@ -373,7 +488,12 @@ for ai = 1:2
                     rsu.shp.tgt(end+1) = t + tm; rsu.shp.t0(end+1) = t;
                 end
             else
-                rsu.shp.tgt(k) = max(rsu.shp.tgt(k), min(t + tm, rsu.shp.nat(k) + rsu.dmax));
+                % extend a stored target only for a real delay beyond the
+                % earliest time; repeating it must not renew it every step (a
+                % car standing at its line would otherwise never be released)
+                if tau(i) > e.lo(i) + 0.05
+                    rsu.shp.tgt(k) = max(rsu.shp.tgt(k), min(t + tm, rsu.shp.nat(k) + capk));
+                end
                 tm = max(tm, rsu.shp.tgt(k) - t);
             end
         elseif cfg.eco && timeMsg && tau(i) > e.lo(i) + 0.5
@@ -499,7 +619,15 @@ for ai = 1:2
     end
     m = ~e.fixed;
     dd = x(m) - e.nat(m);
-    J = J + sum(max(dd, 0).^2) + w_adv * sum(min(dd, 0).^2);
+    if e.jtp
+        % vehicle-seconds of delay, plus tp_R for each known vehicle pushed
+        % past the end of the green, plus the unseen tail of a saturated lane
+        miss = sum(e.nat(m) <= e.tend & x(m) > e.tend);
+        tail = 0; if ~isempty(x), tail = max(x(end) - e.nat(end), 0); end
+        J = J + sum(max(dd, 0)) + e.R * miss + e.wt * tail + w_adv * sum(min(dd, 0).^2);
+    else
+        J = J + sum(max(dd, 0).^2) + w_adv * sum(min(dd, 0).^2);
+    end
 end
 end
 
