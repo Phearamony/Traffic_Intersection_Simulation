@@ -7,7 +7,7 @@ function run_scenarios(names, cfgs)
 %   The scenarios are fixed in make_traffic_schedule.m: one green phase, a
 %   westbound right-turner facing an eastbound platoon whose gaps are too
 %   short (A), and the same with a second turner and a mutual right turn
-%   (B). Each runs 360 steps (180 s). Configurations: C1, C2, C3, C4.
+%   (B). Each runs 360 steps (180 s). Configurations: C1, C2, C3, C4, C4_CLTP.
 %   Output in output/4_scenarios/<name>/: the usual per-run figures,
 %   carlog_<label>.mat of every run, scenario_overview.png (position and
 %   speed of every east-west vehicle over time, one column per
@@ -15,7 +15,7 @@ function run_scenarios(names, cfgs)
 %   C1, C3 and C4). Metrics: output/4_scenarios/scenario_runs.csv
 if nargin < 1 || isempty(names), names = {'scenarioA', 'scenarioB'}; end
 if ischar(names), names = {names}; end
-if nargin < 2 || isempty(cfgs), cfgs = {'C1', 'C2', 'C3', 'C4'}; end
+if nargin < 2 || isempty(cfgs), cfgs = {'C1', 'C2', 'C3', 'C4', 'C4_CLTP'}; end
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
 base = out_folder('scenarios');
@@ -43,7 +43,7 @@ for n = 1:numel(names)
     end
     try
         plot_scenario(outdir, cfgs);
-        plot_scenario_frames(outdir, {'C1', 'C3', 'C4'});
+        plot_scenario_frames(outdir, {'C1', 'C3', 'C4', 'C4_CLTP'});
     catch err
         fprintf(2, 'scenario figures failed for %s: %s\n', sc, err.message);
     end
