@@ -11,8 +11,10 @@ rtshare,C4_proposed,0.5,never,0.05,never
 rtshare,C4_lead_turn_tp,0.25,never,0.05,never
 latency,C3_mpc_rsu_gpr,never,never,0,never
 latency,C4_proposed,never,never,0,never
+latency,C4_lead_turn_tp,never,never,0,never
 loss,C3_mpc_rsu_gpr,never,never,0,never
 loss,C4_proposed,never,never,0,never
+loss,C4_lead_turn_tp,never,never,0,never
 penetration,C2_idm_rsu,never,never,0,never
 penetration,C3_mpc_rsu_gpr,never,never,0,never
 penetration,C4_strict,never,never,0,never
@@ -24,6 +26,8 @@ driver,C1_human,never,never,aggressive,aggressive
 driver,C3_mpc_rsu_gpr,never,never,aggressive,never
 driver,C4_no_online,never,never,aggressive,never
 driver,C4_proposed,never,never,aggressive,never
+driver,C4_lead_turn_tp,never,never,aggressive,never
 asym,C1_human,never,never,0.5,never
 asym,C3_mpc_rsu_gpr,never,never,0.5,never
 asym,C4_proposed,never,never,0.5,never
+asym,C4_lead_turn_tp,never,never,0.5,never
