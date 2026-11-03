@@ -1,7 +1,8 @@
 # CISE (conference paper, code v1)
 
 Everything that belongs to the conference paper *Learning-Based Optimal Right-Turn Coordination System for
-Connected and Automated Vehicles at Intersections* (SICE Festival 2026) is in this folder, so it does not
+Connected and Automated Vehicles at Intersections* (Proc. SICE Festival 2026 with Annual Conference, Yokohama,
+pp. 665-670; [PDF](https://drive.google.com/file/d/1h1G11o44SiFWYravJFsgIG5Vy24xO_ma/view?usp=drivesdk)) is in this folder, so it does not
 mix with the current version. Nothing here is on the MATLAB path or used by the scripts in `main/`.
 
 | Folder | Content |

@@ -4,7 +4,7 @@ MATLAB simulation for my master's research at **Gunma University (Kamal Laborato
 Connected and Automated Vehicles (CAVs) can turn right efficiently and safely at signalized intersections
 in **left-hand traffic** (Japan).
 
-📄 **Conference paper:** [Learning-Based Optimal Right-Turn Coordination System for Connected and Automated Vehicles at Intersections](https://drive.google.com/file/d/1eD-5lxTvvwlGY6lJCwVpVNrC4kos1YCi/view?usp=sharing)
+📄 **Conference paper:** [Learning-Based Optimal Right-Turn Coordination System for Connected and Automated Vehicles at Intersections](https://drive.google.com/file/d/1h1G11o44SiFWYravJFsgIG5Vy24xO_ma/view?usp=drivesdk), Proceedings of the SICE Festival 2026 with Annual Conference, Yokohama, Japan, Sep. 14-17, 2026, pp. 665-670.
 *Phearamony Phan, Mahmudul Hasan, A. S. M. Bakibillah, Md Abdus Samad Kamal, Kou Yamada*.
 SICE Festival 2026 (SICE Annual Conference), Yokohama, Japan.
 
