@@ -18,8 +18,8 @@ clear; close all;
 
 % ---------------- settings ----------------
 FRESH      = true;           % true: delete the old results of the steps switched on below
-DO_TRAIN   = true;           % 1. estimators
-DO_STUDY   = true;           % 2. main study
+DO_TRAIN   = false;           % 1. estimators
+DO_STUDY   = false;           % 2. main study
 DO_FIGURES = true;           % 3. figures
 DO_SCEN    = true;           % 4. scenarios
 DO_SWEEPS  = true;           % 5. stress tests
