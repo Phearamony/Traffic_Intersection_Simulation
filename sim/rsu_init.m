@@ -50,6 +50,9 @@ rsu.clt_dmax_tp = 25;                % [s] hold limit and window with the throug
 % throughput-priced slot cost (cfg.jtp)
 rsu.tp_R = 60;                       % [s] price of a known vehicle pushed past the end of green (about one red)
 rsu.tp_edge = 110;                   % [m] a lane is saturated to the edge of view when its last vehicle is this far out
+rsu.h_q = 2.0;                       % [s] headway of a queue starting from rest (cfg.qd)
+rsu.clt_vstand = 0.5;                 % [m/s] with cfg.qd only standing CAVs are held for a lead turn
+rsu.l_s = 2.0;                       % [s] start-up time lost by a moving CAV held to a stop (cfg.qd)
 rsu.gi_ids = zeros(1, 0);            % CAVs held for an inserted gap
 rsu.gi_tid = zeros(1, 0);            % the turner each was held for
 rsu.shp = struct('id', zeros(1, 0), 'nat', zeros(1, 0), 'tgt', zeros(1, 0), 't0', zeros(1, 0));

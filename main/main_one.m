@@ -7,7 +7,7 @@
 %   C3           CISE method (conference paper)
 %   C4           proposed
 %   C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ, C4_NOADV, C4_ONCE,
-%   C4_GI, C4_CLT, C4_CLTP
+%   C4_GI, C4_CLT, C4_CLTP, C4_LT (proposed), C4_LTR
 %                C4 with one part changed (see README)
 %   V2V_IDM, C2G, C3I   also available
 % Writes to output/single_runs/: EW_<fig>.png (trajectories),

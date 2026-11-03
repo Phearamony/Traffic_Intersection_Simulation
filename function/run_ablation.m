@@ -15,7 +15,10 @@ function run_ablation(seeds, kkmax, with_estimator, cfgs)
 %     C4_STRICT (existing gaps only), C4_SEQ (turners one after another,
 %     as [5]), C4_NOADV (no pulling forward), C4_ONCE (planned once per green) | C4 + cooperative
 %     leading right turn: C4_CLT (hold limit 15 s), C4_CLTP (throughput-priced
-%     cost decides, up to 25 s)
+%     cost decides, up to 25 s), C4_LT (proposed: C4_CLTP with the
+%     queue-aware hold), C4_LTR (as C4_LT, but a local rule decides the hold)
+%   Only some configurations, e.g. after adding new ones to an existing study:
+%     run_ablation(101:120, 720, false, {'C4_LTR', 'C4_LT'})
 %   Also available: V2V_IDM, C2G, C3I, C4_GI (gap insertion, superseded by C4_CLT) (the factorial of the CISE paper).
 %   All share the traffic of each seed. Output in output/2_main_study/:
 %     ablation_runs.csv     one row per (seed, configuration), every metric
@@ -31,7 +34,8 @@ if nargin < 2 || isempty(kkmax), kkmax = 720; end
 if nargin < 3 || isempty(with_estimator), with_estimator = false; end
 if nargin < 4 || isempty(cfgs)
     cfgs = {'C1', 'V2V_MPC', 'C2', 'C3', 'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', ...
-            'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE', 'C4_CLT', 'C4_CLTP'};
+            'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE', 'C4_CLT', 'C4_CLTP', ...
+            'C4_LTR', 'C4_LT'};
 end
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));

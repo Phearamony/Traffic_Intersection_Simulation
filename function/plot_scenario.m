@@ -9,9 +9,10 @@ function plot_scenario(outdir, cfgs)
 %     bottom  speed over time
 %   Right-turners red, straight black, left-turners blue; the east-west
 %   green is shaded.
-if nargin < 2 || isempty(cfgs), cfgs = {'C1', 'C2', 'C3', 'C4', 'C4_CLTP'}; end
+if nargin < 2 || isempty(cfgs), cfgs = {'C1', 'C2', 'C3', 'C4', 'C4_CLTP', 'C4_LT'}; end
 ttl = struct('C1', 'C1  human driving', 'C2', 'C2  IDM + RSU', 'C3', 'C3  MPC + RSU (GPR)', ...
-             'C3I', 'C3I  MPC + RSU (IDM est.)', 'C4', 'C4  without lead turn', 'C4_CLTP', 'C4_CLTP  proposed (lead turn)');
+             'C3I', 'C3I  MPC + RSU (IDM est.)', 'C4', 'C4  without lead turn', 'C4_CLTP', 'C4_CLTP  lead turn (Nov 2)', ...
+             'C4_LT', 'C4_LT  proposed (queue-aware lead turn)', 'C4_LTR', 'C4_LTR  lead turn by rule');
 green = [60, 114.5];
 nC = numel(cfgs);
 f = figure('Color', 'w', 'Position', [60 60 380 * nC 750]);

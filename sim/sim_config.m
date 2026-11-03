@@ -32,6 +32,13 @@ function cfg = sim_config(name)
 %           'fixed' 4 s safety gap and 2 s headway ([5], CISE)
 %   adv     1 = the RSU may also ask CAVs to arrive earlier (up to the limit)
 %   eco     1 = CAVs that have to wait anyway get their planned arrival time
+%   gi      1 = gap insertion (superseded by clt)
+%   clt     1 = cooperative leading right turn: queued oncoming CAVs may be held
+%   jtp     1 = throughput-priced slot cost (vehicle-seconds, missed greens, tail)
+%   qd      1 = queue-aware hold: only standing CAVs are held, and vehicles
+%           behind a vehicle the plan makes stand follow at h_q (rsu_init)
+%   ltrule  N > 0: the lead turn is taken by a local rule (at least N vehicles
+%           wait behind the turner) instead of by the cost (baseline)
 %   label   results label;  fig  suffix of the figure names
 %
 %   Reference methods, rebuilt in this engine with the same traffic, the
@@ -43,7 +50,7 @@ function cfg = sim_config(name)
 
 c = struct('ctrl', 'idm', 'coord', 'none', 'est', 'idm', 'msg', 'speed', ...
            'unc_z', 0, 'online', 0, 'spat', 0, 'slot', 'opt', 'plan', 'rolling', ...
-           'margin', 'geom', 'adv', 0, 'eco', 0, 'gi', 0, 'clt', 0, 'jtp', 0, 'label', '', 'fig', '', 'name', name);
+           'margin', 'geom', 'adv', 0, 'eco', 0, 'gi', 0, 'clt', 0, 'jtp', 0, 'qd', 0, 'ltrule', 0, 'label', '', 'fig', '', 'name', name);
 ref = {'coord', 'rsu'; 'spat', 1; 'msg', 'time'; 'slot', 'seq'; 'plan', 'once'; ...
        'margin', 'fixed'; 'eco', 1};
 switch upper(name)
@@ -100,6 +107,12 @@ switch upper(name)
     case 'C4_CLTP'                             % lead turn, throughput-priced slot cost
         c = sim_config('C4_CLT'); c.jtp = 1;
         c.label = 'C4_lead_turn_tp'; c.fig = 'proposed_cltp';
+    case 'C4_LT'                               % proposed: lead turn with the queue-aware hold
+        c = sim_config('C4_CLTP'); c.qd = 1;
+        c.label = 'C4_lead_turn_q';  c.fig = 'proposed_lt';
+    case 'C4_LTR'                              % lead turn by a local rule instead of the cost
+        c = sim_config('C4_LT'); c.ltrule = 2;
+        c.label = 'C4_lead_turn_rule'; c.fig = 'proposed_ltr';
     otherwise
         error('sim_config: unknown configuration %s', name);
 end

@@ -74,6 +74,20 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %     'seq'     successive, as in [5]: turners in order of arrival, each takes
 %               its own lowest-cost slot given those already planned
 %
+%   Queue-aware hold (cfg.qd, C4_LT)
+%     A vehicle "stands" in a plan when it is delayed more than 0.5 s past
+%     its natural time and it is a waiting turner, a held CAV, a slow
+%     (queued) vehicle, or behind one that stands. The vehicle behind a
+%     standing one follows at the queue headway h_q (2 s) instead of h_min
+%     (1 s): a queue that starts from rest discharges at about 2 s per car.
+%     A lead-turn hold is offered only to CAVs that already stand in their
+%     queue (v <= clt_vstand), never to a moving car. With moving holds
+%     allowed (clt_vstand large), each vehicle of a queue that a hold brings
+%     to a stop is charged the start-up loss l_s (2 s) in J_tp.
+%     Local rule (cfg.ltrule = N, C4_LTR, baseline): the lead turn is taken
+%     whenever at least N vehicles wait behind the turner and the slot
+%     before the first held CAV is feasible, without comparing costs.
+%
 %   Planning (cfg.plan)
 %     'rolling' every step, with the current predictions (proposed)
 %     'once'    at the start of each green, and again when a new turner comes
@@ -191,7 +205,9 @@ for ai = 1:2
         end
     end
     for i = 2:n                                    % lane order
-        if ~e.fixed(i), e.lo(i) = max(e.lo(i), e.lo(i-1) + h); end
+        hh = h;                                    % behind a CAV held to a stop: queue discharge
+        if cfg.qd && e.ps(i-1) > 0 && e.lo(i-1) > e.nat(i-1) + 0.5 && e.v(i-1) < 5, hh = rsu.h_q; end
+        if ~e.fixed(i), e.lo(i) = max(e.lo(i), e.lo(i-1) + hh); end
     end
     % natural time: behind the vehicles ahead (lane order), or the time
     % stored when it was first shaped
@@ -225,6 +241,11 @@ for ai = 1:2
     % edge of the RSU's view (the delay then carries on to the unseen vehicles
     % behind it: tail/h_sat of them miss the green, each waiting about tp_R)
     e.jtp = cfg.jtp; e.tend = inf; e.wt = 0; e.R = rsu.tp_R;
+    % queue discharge (cfg.qd): a vehicle the plan makes stand (a held CAV, a
+    % waiting turner, a slow one delayed further) starts again from rest, and
+    % the vehicles pushed behind it follow at the saturation headway h_q, not h
+    e.qd = cfg.qd; e.hq = h; e.ls = 0;
+    if cfg.qd, e.hq = rsu.h_q; e.ls = rsu.l_s; end
     if cfg.jtp
         if strcmp(sig.(a), 'green'), e.tend = sigT.(a)(2) - t; end
         if n > 0 && e.d(n) >= rsu.tp_edge, e.wt = rsu.tp_R / rsu.gi_hsat; end
@@ -331,6 +352,7 @@ end
 % decision variables with a release delay of up to clt_dmax; the slot search
 % decides by J whether to use it (art. 37: the through CAV waits on the
 % RSU's command, the turner only turns into a gap that exists)
+force = zeros(1, nT);                                % local rule (cfg.ltrule): slot forced for turner k
 if cfg.clt && ctl && ~strict
     dmc = rsu.clt_dmax; wnc = rsu.clt_win;
     if cfg.jtp, dmc = rsu.clt_dmax_tp; wnc = dmc; end
@@ -338,14 +360,23 @@ if cfg.clt && ctl && ~strict
         ai = T(k).ai; bi = 3 - ai; e = Ln{ai}; i = T(k).i;
         if e.lo(i) > rsu.clt_reach, continue; end
         if any([T.ai] == ai & [T.i] < i), continue; end   % front turner only
+        if cfg.ltrule > 0
+            % local rule: only when at least ltrule vehicles wait behind the
+            % turner (up to the next turner of its lane)
+            nq = 0; j = i + 1;
+            while j <= numel(e.id) && ~e.turn(j) && e.mov(j) ~= 'R', nq = nq + 1; j = j + 1; end
+            if nq < cfg.ltrule, continue; end
+        end
         f = Ln{bi}; any_m = false;
         for m = T(k).cidx
             if f.fixed(m) || f.turn(m) || f.yld(m) || ~f.cav(m) || f.mov(m) == 'R', continue; end
             if f.v(m) > 0.5 && f.d(m) < f.v(m)^2 / (2 * rsu.gi_b) + 1, continue; end   % moving: must still stop gently
+            if cfg.qd && f.v(m) > rsu.clt_vstand, continue; end        % only a car already standing in its queue
             if f.d(m) >= rsu.d_cmd && f.v(m) >= 5, continue; end      % far movers: normal shaping
             if f.lo(m) > max(e.lo(i), 0) + wnc, continue; end
             f.hi(m) = max(f.hi(m), f.nat(m) + dmc);
             f.cmd(m) = true; f.gi(m) = true; any_m = true;
+            if cfg.ltrule > 0 && force(k) == 0, force(k) = find(T(k).cidx == m, 1); end
         end
         Ln{bi} = f; if any_m, giT(bi) = T(k).id; end
     end
@@ -361,6 +392,9 @@ for k = 1:nT
         if evalBest(Ln, T, sl, h, adv, rsu.w_adv), S{k} = [S{k}, p]; end
     end
     if isempty(S{k}), S{k} = numel(T(k).cidx) + 1; end
+    % local rule: the turner goes before the first held vehicle whenever
+    % that slot is feasible (no cost comparison)
+    if force(k) > 0 && any(S{k} == force(k)), S{k} = force(k); end
 end
 nat_k = arrayfun(@(x) Ln{x.ai}.nat(x.i), T);
 best = [];
@@ -564,12 +598,14 @@ end
 for it = 1:30
     changed = false;
     for ai = 1:2
-        e = Ln{ai};
+        e = Ln{ai}; x = tau{ai};
         for i = 2:numel(e.id)
             if e.fixed(i), continue; end
-            nt = tau{ai}(i - 1) + h;
-            if tau{ai}(i) < nt - 1e-9, tau{ai}(i) = nt; changed = true; end
+            hh = h;
+            if e.qd, st = stands(e, x(1:i-1)); if st(i-1), hh = e.hq; end, end
+            if x(i) < x(i-1) + hh - 1e-9, x(i) = x(i-1) + hh; changed = true; end
         end
+        tau{ai} = x;
     end
     for k = 1:numel(T)
         p = sl(k);
@@ -583,7 +619,7 @@ for it = 1:30
         if tk > tau{ai}(T(k).i) + 1e-9, tau{ai}(T(k).i) = tk; changed = true; end
         for j = p:numel(c)
             m = c(j);
-            behindHeld = m > 1 && held{bi}(m - 1) && f.hold(m - 1) && tau{bi}(m) <= tau{bi}(m - 1) + h + 1e-6;
+            behindHeld = m > 1 && held{bi}(m - 1) && f.hold(m - 1) && tau{bi}(m) <= tau{bi}(m - 1) + f.hq + 1e-6;
             if f.hold(m) || behindHeld, mg = T(k).DaC(m); else, mg = T(k).Da(m); end
             req = tk + mg;
             if tau{bi}(m) < req - 1e-9
@@ -613,7 +649,7 @@ for ai = 1:2
         if x(i) <= e.lo(i) + 0.01, continue; end
         if e.fixed(i), ok = false; return; end
         if e.turn(i) || e.yld(i), continue; end
-        if i > 1 && x(i) <= x(i - 1) + h + 0.01, continue; end     % pushed by the one ahead
+        if i > 1 && x(i) <= x(i - 1) + e.hq + 0.01, continue; end  % pushed by the one ahead
         if e.cmd(i) && x(i) <= e.hi(i) + 0.01, continue; end     % commanded within its limit
         ok = false; return;
     end
@@ -625,8 +661,31 @@ for ai = 1:2
         miss = sum(e.nat(m) <= e.tend & x(m) > e.tend);
         tail = 0; if ~isempty(x), tail = max(x(end) - e.nat(end), 0); end
         J = J + sum(max(dd, 0)) + e.R * miss + e.wt * tail + w_adv * sum(min(dd, 0).^2);
+        if e.qd
+            % a moving CAV held to a stop, and the queue behind it, restart
+            % from rest: each loses the start-up time l_s
+            [~, nw] = stands(e, x);
+            J = J + e.ls * sum(nw);
+        end
     else
         J = J + sum(max(dd, 0).^2) + w_adv * sum(min(dd, 0).^2);
+    end
+end
+end
+
+function [st, nw] = stands(e, x)
+% st: the plan makes the vehicle stand at its line: it is delayed by more
+% than 0.5 s beyond its natural time and it is a waiting turner, a held
+% CAV, a slow (queued) vehicle, or behind one that stands. More delay never
+% turns st off, so the lane-order bound stays monotone (Lemma 1).
+% nw: it stands because a CAV that is still moving is held to a stop
+n = numel(x); st = false(1, n); nw = false(1, n);
+for j = 1:n
+    if e.fixed(j) || x(j) <= e.nat(j) + 0.5, continue; end
+    if e.turn(j) || e.gi(j) || e.v(j) < 5
+        st(j) = true; nw(j) = e.gi(j) && e.v(j) > 1;
+    elseif j > 1 && st(j - 1)
+        st(j) = true; nw(j) = nw(j - 1);
     end
 end
 end
