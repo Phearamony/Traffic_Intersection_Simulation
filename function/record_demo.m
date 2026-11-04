@@ -107,7 +107,7 @@ switch upper(name)
     case 'C1', s = 'C1  Human drivers';
     case 'V2V_MPC', s = 'V2V-MPC  CAVs, no RSU';
     case 'C2', s = 'C2  Hasan et al. [5]';
-    case 'C3', s = 'C3  CISE (GPR + MPC)';
+    case 'C3', s = 'C3  SICE (GPR + MPC)';
     case 'C4', s = 'C4  Proposed';
     otherwise, s = strrep(upper(name), '_', '-');
 end

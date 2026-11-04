@@ -34,9 +34,9 @@ end
 cfg   = {'C1_human', 'V2V_IDM', 'V2V_MPC', 'C2_idm_rsu', 'C2G_idm_rsu_gpr', 'C3I_mpc_rsu', ...
          'C3_mpc_rsu_gpr', 'C4_no_unc', 'C4_no_online', 'C4_speed_adv', 'C4_strict', 'C4_seq', ...
          'C4_no_adv', 'C4_once', 'C4_proposed', 'C4_lead_turn', 'C4_lead_turn_tp', ...
-         'C4_lead_turn_rule', 'C4_lead_turn_q'};
-names = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2 [5]', 'C2G', 'C3I', 'C3 CISE', 'C4-unc', 'C4-onl', 'C4-spd', ...
-         'C4-strict', 'C4-seq', 'C4-adv', 'C4-once', 'C4', 'C4-CLT', 'C4-CLTP', 'C4-LTR', 'C4-LT'};
+         'C4_lead_turn_rule', 'C4_lead_turn_q', 'C4_lead_turn_tp_rule'};
+names = {'C1', 'V2V-IDM', 'V2V-MPC', 'C2 [5]', 'C2G', 'C3I', 'C3 SICE', 'C4-unc', 'C4-onl', 'C4-spd', ...
+         'C4-strict', 'C4-seq', 'C4-adv', 'C4-once', 'C4', 'C4-CLT', 'C4-CLTP', 'C4-LTR', 'C4-LT', 'C4-CLTR'};
 keep  = ismember(cfg, cellstr(unique(T.label)));
 cfg = cfg(keep); names = names(keep);
 
@@ -83,7 +83,7 @@ close(f1);
 % ---------------- Figure 2: paired differences ----------------
 cmp = { 'C1_human',        'C4_proposed',     'Proposed vs human  (C1\rightarrowC4)';
         'C2_idm_rsu',      'C4_proposed',     'Proposed vs [5]  (C2\rightarrowC4)';
-        'C3_mpc_rsu_gpr',  'C4_proposed',     'Proposed vs CISE  (C3\rightarrowC4)';
+        'C3_mpc_rsu_gpr',  'C4_proposed',     'Proposed vs SICE  (C3\rightarrowC4)';
         'V2V_MPC',         'C4_proposed',     'RSU | MPC  (V2V-MPC\rightarrowC4)';
         'C4_no_unc',       'C4_proposed',     'Uncertainty margins';
         'C4_no_online',    'C4_proposed',     'Online learning';
@@ -92,8 +92,8 @@ cmp = { 'C1_human',        'C4_proposed',     'Proposed vs human  (C1\rightarrow
         'C4_seq',          'C4_proposed',     'Joint vs successive slots';
         'C4_no_adv',       'C4_proposed',     'Pulling forward';
         'C4_once',         'C4_proposed',     'Every step vs once per green';
-        'C4_proposed',     'C4_lead_turn_q',  'Lead turn  (C4\rightarrowC4-LT)';
-        'C4_lead_turn_rule','C4_lead_turn_q', 'Optimizer vs local rule' };
+        'C4_proposed',     'C4_lead_turn_tp', 'Lead turn  (C4\rightarrowC4-CLTP)';
+        'C4_lead_turn_tp_rule','C4_lead_turn_tp', 'Optimizer vs local rule' };
 pm  = {'fuel_rt_mL', 'gap_rt_s', 'n_exited'};
 pl  = {'\Delta fuel per right-turner [mL]', '\Delta gap wait [s]', '\Delta vehicles finished [veh]'};
 

@@ -23,8 +23,8 @@ rsu.samples = zeros(0, 14);          % [t_snap id app(1=E,2=W) d v gap g n vl nR
 rsu.evalrows = zeros(0, 12);         % see rsu_crossed
 rsu.lambda = 0.995;                  % forgetting factor of online learning
 rsu.h_min = 1.0;                     % [s] minimum headway between stop-line arrivals
-rsu.tau_safe = 4.0;                  % [s] fixed safety gap of [5] and CISE (cfg.margin = 'fixed')
-if strcmp(cfg.margin, 'fixed'), rsu.h_min = 2.0; end   % h_time = 2 s in [5] and CISE
+rsu.tau_safe = 4.0;                  % [s] fixed safety gap of [5] and SICE (cfg.margin = 'fixed')
+if strcmp(cfg.margin, 'fixed'), rsu.h_min = 2.0; end   % h_time = 2 s in [5] and SICE
 rsu.pet = 1.5;                       % [s] PET margin of a slot
 % gap shaping limits (rsu_plan): oncoming CAVs only
 rsu.dmax = 2.0;                      % [s] largest extra delay per vehicle (ABL_DMAX)

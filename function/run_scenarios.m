@@ -8,7 +8,7 @@ function run_scenarios(names, cfgs)
 %   westbound right-turner facing an eastbound platoon whose gaps are too
 %   short (A), and the same with a second turner and a mutual right turn
 %   (B). Each runs 360 steps (180 s). Configurations: C1, C2, C3, C4,
-%   C4_CLTP, C4_LT (proposed).
+%   C4_CLTP (proposed), C4_LT.
 %   Output in output/4_scenarios/<name>/: the usual per-run figures,
 %   carlog_<label>.mat of every run, scenario_overview.png (position and
 %   speed of every east-west vehicle over time, one column per
@@ -44,7 +44,7 @@ for n = 1:numel(names)
     end
     try
         plot_scenario(outdir, cfgs);
-        plot_scenario_frames(outdir, {'C1', 'C3', 'C4', 'C4_LT'});
+        plot_scenario_frames(outdir, {'C1', 'C3', 'C4', 'C4_CLTP'});
     catch err
         fprintf(2, 'scenario figures failed for %s: %s\n', sc, err.message);
     end

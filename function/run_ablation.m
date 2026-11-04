@@ -9,17 +9,18 @@ function run_ablation(seeds, kkmax, with_estimator, cfgs)
 %   Configurations (sim/sim_config.m):
 %     C1 human drivers | V2V_MPC (CAVs, no RSU) | C2 the method of [5]
 %     (IDM, IDM estimator, 4 s gap, once per green, turners one after
-%     another) | C3 the CISE method (as C2 with GPR and QP-MPC) |
+%     another) | C3 the SICE method (as C2 with GPR and QP-MPC) |
 %     C4 proposed | C4 with one part changed: C4_NOUNC (no uncertainty
 %     margins), C4_NOONLINE (no online learning), C4_SPEED (speed advice),
 %     C4_STRICT (existing gaps only), C4_SEQ (turners one after another,
 %     as [5]), C4_NOADV (no pulling forward), C4_ONCE (planned once per green) | C4 + cooperative
 %     leading right turn: C4_CLT (hold limit 15 s), C4_CLTP (throughput-priced
-%     cost decides, up to 25 s), C4_LT (proposed: C4_CLTP with the
-%     queue-aware hold), C4_LTR (as C4_LT, but a local rule decides the hold)
+%     cost decides, up to 25 s; the proposed method), C4_LT (C4_CLTP with
+%     only standing CAVs held), C4_LTR (as C4_LT, but a local rule decides the hold),
+%     C4_CLTR (as C4_CLTP, but a local rule decides the hold)
 %   Only some configurations, e.g. after adding new ones to an existing study:
-%     run_ablation(101:120, 720, false, {'C4_LTR', 'C4_LT'})
-%   Also available: V2V_IDM, C2G, C3I, C4_GI (gap insertion, superseded by C4_CLT) (the factorial of the CISE paper).
+%     run_ablation(101:120, 720, false, {'C4_CLTR'})
+%   Also available: V2V_IDM, C2G, C3I, C4_GI (gap insertion, superseded by C4_CLT) (the factorial of the SICE paper).
 %   All share the traffic of each seed. Output in output/2_main_study/:
 %     ablation_runs.csv     one row per (seed, configuration), every metric
 %     estimator_runs.csv    estimator accuracy per seed (with_estimator)
@@ -35,7 +36,7 @@ if nargin < 3 || isempty(with_estimator), with_estimator = false; end
 if nargin < 4 || isempty(cfgs)
     cfgs = {'C1', 'V2V_MPC', 'C2', 'C3', 'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', ...
             'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE', 'C4_CLT', 'C4_CLTP', ...
-            'C4_LTR', 'C4_LT'};
+            'C4_LTR', 'C4_LT', 'C4_CLTR'};
 end
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));

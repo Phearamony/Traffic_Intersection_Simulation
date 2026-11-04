@@ -8,10 +8,10 @@
 % given it a slot). The window title shows the configuration and time.
 % Close the figure window to skip to the next configuration.
 %
-% Configurations: C1 (human), V2V_MPC (CAVs, no RSU), C2 ([5]), C3 (CISE),
+% Configurations: C1 (human), V2V_MPC (CAVs, no RSU), C2 ([5]), C3 (SICE),
 % C4 (proposed), C4_NOUNC, C4_NOONLINE, C4_SPEED, C4_STRICT, C4_SEQ,
 % C4_NOADV, C4_ONCE (C4 with one part changed);
-% C4_CLT, C4_CLTP (C4 + cooperative leading right turn), C4_LT (proposed),
+% C4_CLT, C4_CLTP (proposed: C4 + cooperative leading right turn), C4_LT,
 % C4_LTR (lead turn by a local rule); also V2V_IDM, C2G, C3I.
 
 clear; close all;
@@ -28,7 +28,7 @@ root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'sim')); addpath(fullfile(root, 'function'));
 if ischar(CONFIGS) && strcmpi(CONFIGS, 'ALL')
     CONFIGS = {'C1', 'V2V_MPC', 'C2', 'C3', 'C4', 'C4_NOUNC', 'C4_NOONLINE', 'C4_SPEED', ...
-               'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE', 'C4_CLT', 'C4_CLTP', 'C4_LTR', 'C4_LT'};
+               'C4_STRICT', 'C4_SEQ', 'C4_NOADV', 'C4_ONCE', 'C4_CLT', 'C4_CLTP', 'C4_LTR', 'C4_LT', 'C4_CLTR'};
 end
 if ischar(CONFIGS), CONFIGS = {CONFIGS}; end
 extra = {'ABL_KKMAX', num2str(KKMAX), 'VIEW', VIEW};

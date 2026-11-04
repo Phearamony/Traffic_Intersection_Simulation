@@ -27,9 +27,9 @@ function cfg = sim_config(name)
 %   slot    'opt' joint optimizer | 'seq' successive, as in [5] | 'strict'
 %           existing gaps only (rsu_plan); every rule keeps the right-turn
 %           priority of the Road Traffic Act (art. 37) and the same limits
-%   plan    'rolling' every step | 'once' at the start of each green ([5], CISE)
+%   plan    'rolling' every step | 'once' at the start of each green ([5], SICE)
 %   margin  'geom' conflict-zone geometry + PET + uncertainty |
-%           'fixed' 4 s safety gap and 2 s headway ([5], CISE)
+%           'fixed' 4 s safety gap and 2 s headway ([5], SICE)
 %   adv     1 = the RSU may also ask CAVs to arrive earlier (up to the limit)
 %   eco     1 = CAVs that have to wait anyway get their planned arrival time
 %   gi      1 = gap insertion (superseded by clt)
@@ -46,7 +46,7 @@ function cfg = sim_config(name)
 %     C2  [5] Hasan et al.: IDM vehicles that track their target crossing
 %         times, IDM forward simulation, fixed 4 s gap, planned once per
 %         green, turners one after another
-%     C3  CISE (conference paper): as C2 with GPR estimator and QP-MPC
+%     C3  SICE (conference paper): as C2 with GPR estimator and QP-MPC
 
 c = struct('ctrl', 'idm', 'coord', 'none', 'est', 'idm', 'msg', 'speed', ...
            'unc_z', 0, 'online', 0, 'spat', 0, 'slot', 'opt', 'plan', 'rolling', ...
@@ -70,7 +70,7 @@ switch upper(name)
     case 'C3I'
         c = setf(c, ref); c.ctrl = 'mpc'; c.est = 'idm';
         c.label = 'C3I_mpc_rsu';     c.fig = 'mpc_rsu';
-    case 'C3'                                  % CISE
+    case 'C3'                                  % SICE
         c = setf(c, ref); c.ctrl = 'mpc'; c.est = 'gpr';
         c.label = 'C3_mpc_rsu_gpr';  c.fig = 'mpc_rsu_gpr';
     case 'C4'                                  % proposed
@@ -104,15 +104,18 @@ switch upper(name)
     case 'C4_CLT'                              % C4 + cooperative leading right turn
         c = sim_config('C4'); c.clt = 1;
         c.label = 'C4_lead_turn';    c.fig = 'proposed_clt';
-    case 'C4_CLTP'                             % lead turn, throughput-priced slot cost
+    case 'C4_CLTP'                             % proposed: lead turn, throughput-priced slot cost
         c = sim_config('C4_CLT'); c.jtp = 1;
         c.label = 'C4_lead_turn_tp'; c.fig = 'proposed_cltp';
-    case 'C4_LT'                               % proposed: lead turn with the queue-aware hold
+    case 'C4_LT'                               % ablation: only standing CAVs held, queue headway in the plan
         c = sim_config('C4_CLTP'); c.qd = 1;
         c.label = 'C4_lead_turn_q';  c.fig = 'proposed_lt';
-    case 'C4_LTR'                              % lead turn by a local rule instead of the cost
+    case 'C4_LTR'                              % as C4_LT, but a local rule decides the hold
         c = sim_config('C4_LT'); c.ltrule = 2;
         c.label = 'C4_lead_turn_rule'; c.fig = 'proposed_ltr';
+    case 'C4_CLTR'                             % as C4_CLTP, but a local rule decides the hold
+        c = sim_config('C4_CLTP'); c.ltrule = 2;
+        c.label = 'C4_lead_turn_tp_rule'; c.fig = 'proposed_cltr';
     otherwise
         error('sim_config: unknown configuration %s', name);
 end

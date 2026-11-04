@@ -2,7 +2,7 @@
 %
 % Steps (each can be switched off below):
 %   1. train the estimators (GPR, PI-GPR, queue physics) on seeds 1-20
-%   2. main study: 14 configurations x seeds 101-120 + estimator comparison
+%   2. main study: 17 configurations x seeds 101-120 + estimator comparison
 %   3. figures of a representative seed and of the whole study
 %   4. illustrative scenarios A and B
 %   5. stress tests (demand, right-turn share, latency, loss, penetration,

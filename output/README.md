@@ -12,5 +12,5 @@ One folder per step, in the order `main/main_all.m` runs them:
 | `single_runs/` | `main_one.m` | figures and `single_runs.csv` of single runs |
 | `main_all_log.txt` | `main_all.m` | console log |
 
-The paths are set in `function/out_folder.m`. The results of the conference paper (CISE, code v1) are in
-`cise/results/` and are never overwritten.
+The paths are set in `function/out_folder.m`. The results of the conference paper (SICE 2026, code v1) are in
+`sice/results/` and are never overwritten.

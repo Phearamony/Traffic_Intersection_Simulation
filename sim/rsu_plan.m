@@ -92,10 +92,10 @@ function [rsu, msgs] = rsu_plan(rsu, W, t, sig, sigT, G, cfg)
 %     'rolling' every step, with the current predictions (proposed)
 %     'once'    at the start of each green, and again when a new turner comes
 %               into range (the RSU only sees about 150 m); in between the same
-%               commands are repeated, nothing is replanned ([5], CISE)
+%               commands are repeated, nothing is replanned ([5], SICE)
 %   Margins (cfg.margin)
 %     'geom'    from the conflict-zone geometry, PET and uncertainty (above)
-%     'fixed'   Db = Da = tau_safe = 4 s and h_min = 2 s ([5], CISE)
+%     'fixed'   Db = Da = tau_safe = 4 s and h_min = 2 s ([5], SICE)
 %
 %   Messages (to CAVs only, every step while the plan stands)
 %     turner      go = t + tau_k (leave the waiting point), unless it cannot

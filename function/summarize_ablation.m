@@ -51,7 +51,7 @@ writetable(stats, fullfile(out_dir, 'ablation_stats.csv'));
 % ---------- paired comparisons (B minus A) ----------
 cmp = { 'C1_human',        'C4_proposed';      % proposed vs uncoordinated
         'C2_idm_rsu',      'C4_proposed';      % proposed vs the method of [5]
-        'C3_mpc_rsu_gpr',  'C4_proposed';      % proposed vs the CISE method
+        'C3_mpc_rsu_gpr',  'C4_proposed';      % proposed vs the SICE method
         'V2V_MPC',         'C4_proposed';      % proposed vs connected, no RSU
         'C4_no_unc',       'C4_proposed';      % uncertainty margins
         'C4_no_online',    'C4_proposed';      % online learning
@@ -65,14 +65,16 @@ cmp = { 'C1_human',        'C4_proposed';      % proposed vs uncoordinated
         'C4_lead_turn',    'C4_lead_turn_tp';  % fixed hold limit vs priced cost
         'V2V_MPC',         'C4_lead_turn_tp';  % lead turn vs connected, no RSU
         'C2_idm_rsu',      'C4_lead_turn_tp';  % lead turn vs the method of [5]
-        'C3_mpc_rsu_gpr',  'C4_lead_turn_tp';  % lead turn vs the CISE method
-        'C4_proposed',     'C4_lead_turn_q';   % proposed lead turn (queue-aware hold)
-        'C4_lead_turn_tp', 'C4_lead_turn_q';   % queue-aware hold vs priced cost alone
-        'C4_lead_turn_rule','C4_lead_turn_q';  % optimizer vs local rule
+        'C3_mpc_rsu_gpr',  'C4_lead_turn_tp';  % lead turn vs the SICE method
+        'C4_proposed',     'C4_lead_turn_q';   % lead turn, standing holds only
+        'C4_lead_turn_tp', 'C4_lead_turn_q';   % standing holds only vs the proposed holds
+        'C4_lead_turn_rule','C4_lead_turn_q';  % optimizer vs local rule (standing holds)
+        'C4_lead_turn_tp_rule','C4_lead_turn_tp'; % optimizer vs local rule (proposed holds)
+        'C4_proposed',     'C4_lead_turn_tp_rule'; % local rule vs no lead turn
         'C4_proposed',     'C4_lead_turn_rule'; % local rule vs no lead turn
-        'V2V_MPC',         'C4_lead_turn_q';   % proposed vs connected, no RSU
-        'C2_idm_rsu',      'C4_lead_turn_q';   % proposed vs the method of [5]
-        'C3_mpc_rsu_gpr',  'C4_lead_turn_q';   % proposed vs the CISE method
+        'V2V_MPC',         'C4_lead_turn_q';   % standing holds only vs connected, no RSU
+        'C2_idm_rsu',      'C4_lead_turn_q';   % standing holds only vs the method of [5]
+        'C3_mpc_rsu_gpr',  'C4_lead_turn_q';   % standing holds only vs the SICE method
         'C2_idm_rsu',      'C3I_mpc_rsu';      % controller effect, IDM estimator
         'C2G_idm_rsu_gpr', 'C3_mpc_rsu_gpr';   % controller effect, GPR estimator
         'C2_idm_rsu',      'C2G_idm_rsu_gpr';  % estimator effect, IDM control
