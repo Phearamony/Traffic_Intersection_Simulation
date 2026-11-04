@@ -26,11 +26,14 @@ The code and results of the conference paper are kept in `sice/`.
 | **C4_CLTP (proposed)** | **77.2** | **59.7** | **10.67** | **1.1** | **0** |
 | C4_LT (standing holds only) | 71.0 | 66.2 | 11.48 | 7.1 | 0 |
 | C4_LTR (C4_LT, rule decides) | 71.6 | 65.5 | 11.38 | 7.6 | 0 |
+| C4_CLTR (C4_CLTP, rule decides) | 75.5 | 58.9 | 10.81 | 2.6 | 0 |
 
 C4_CLTP versus C4: +8.6 trips per run (+12.5%, Wilcoxon p = 0.0003), 10.0 s less delay, 9.8% less fuel.
 Versus V2V_MPC: +9.1 trips (p = 0.0002). Versus the SICE method C3: +12.7 trips (p = 0.0001).
 Allowing only standing CAVs to be held (C4_LT) fixes the two hand-made scenarios but gives up most of the
-gain (-6.2 trips against C4_CLTP, p = 0.0009). Stress tests (`output/5_stress_tests/`): the gain holds for
+gain (-6.2 trips against C4_CLTP, p = 0.0009). A local rule on the proposed holds (C4_CLTR: hold when 2 or more vehicles wait behind the
+turner) reaches most of the gain: +6.9 trips over C4, 1.7 fewer than C4_CLTP (p = 0.06, not significant); the
+cost completes more right turns (59% against 52%, p = 0.001). Stress tests (`output/5_stress_tests/`): the gain holds for
 demand 0.2-0.8 veh/s, every driver population, uneven demand, latency up to 1.5 s (1 s is borderline, p = 0.053) and packet loss up to
 40%; it needs at least 75% CAVs and fades above about 25% right-turners.
 
