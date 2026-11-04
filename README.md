@@ -18,14 +18,14 @@ The code and results of the conference paper are kept in `sice/`.
 
 | Configuration | Trips per run | Mean delay [s] | Fuel [L/100 km] | Right-turner gap wait [s] | Turn conflicts |
 |---|---|---|---|---|---|
-| C1 human drivers | 61.7 | 75.9 | 13.51 | 12.5 | 0.4 |
+| C1 human drivers | 61.6 | 75.9 | 13.51 | 12.5 | 0.4 |
 | C2 method of [5] | 60.7 | 78.4 | 13.63 | 11.0 | 0 |
 | C3 SICE paper | 64.5 | 72.7 | 12.43 | 12.0 | 0 |
 | V2V_MPC (no RSU) | 68.1 | 69.8 | 11.90 | 10.4 | 0 |
 | C4 (without lead turn) | 68.6 | 69.7 | 11.82 | 11.2 | 0 |
 | **C4_CLTP (proposed)** | **77.2** | **59.7** | **10.67** | **1.1** | **0** |
 | C4_LT (standing holds only) | 71.0 | 66.2 | 11.48 | 7.1 | 0 |
-| C4_LTR (C4_LT, rule decides) | 71.6 | 65.5 | 11.38 | 7.7 | 0 |
+| C4_LTR (C4_LT, rule decides) | 71.6 | 65.5 | 11.38 | 7.6 | 0 |
 
 C4_CLTP versus C4: +8.6 trips per run (+12.5%, Wilcoxon p = 0.0003), 10.0 s less delay, 9.8% less fuel.
 Versus V2V_MPC: +9.1 trips (p = 0.0002). Versus the SICE method C3: +12.7 trips (p = 0.0001).
