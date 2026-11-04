@@ -22,7 +22,7 @@ for c = 1:nC
     axB = subplot(2, nC, c + nC); hold on; grid on; box on;
     p = fullfile(outdir, ['carlog_' cfg.label '.mat']);
     name = cfgs{c}; if isfield(ttl, name), name = ttl.(name); end
-    if ~exist(p, 'file'), title(axT, [name '  (no data)']); continue; end
+    if ~exist(p, 'file'), title(axT, [name '  (no data)'], 'Interpreter', 'none'); continue; end
     L = load(p, 'Rs'); R = L.Rs; LOG = R.log; v = R.veh; ids = [v.id];
     for ax = [axT, axB]
         patch(ax, [green(1) green(2) green(2) green(1)], [-1e3 -1e3 1e3 1e3], ...
@@ -43,7 +43,7 @@ for c = 1:nC
         plot(axB, t, sp, '-', 'Color', col, 'LineWidth', lw);
     end
     plot(axT, [0 200], [0 0], ':', 'Color', [0.3 0.3 0.3]);
-    title(axT, name);
+    title(axT, name, 'Interpreter', 'none');
     ylim(axT, [-110 110]); ylim(axB, [0 32]); xlim(axT, [30 140]); xlim(axB, [30 140]);
     xlabel(axB, 'Time [s]');
     if c == 1
