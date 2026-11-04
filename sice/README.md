@@ -1,4 +1,4 @@
-# CISE (conference paper, code v1)
+# SICE (conference paper, code v1)
 
 Everything that belongs to the conference paper *Learning-Based Optimal Right-Turn Coordination System for
 Connected and Automated Vehicles at Intersections* (Proc. SICE Festival 2026 with Annual Conference, Yokohama,
